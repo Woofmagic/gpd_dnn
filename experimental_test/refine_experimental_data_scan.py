@@ -1,11 +1,10 @@
-##########################################
+#################################################################################
 # FILE INFORMATION:
-# Purpose: find any duplicate rows in the 
-# original file and combine the observables
+# Purpose: find any duplicate rows in the original file and combine the observables
 # along that row.
 # Created: 20260504
-# Last changed: 20260504
-##########################################
+# Last changed: 20260528
+#################################################################################
 
 print("[INFO]: Script began running!")
 
@@ -13,6 +12,7 @@ print("[INFO]: Script began running!")
 # Libraries
 #################################################################################
 
+import numpy as np
 import pandas as pd
 
 #################################################################################
@@ -38,13 +38,19 @@ print(f"[INFO]: We are saving figures and data with the following appendage: {MA
 
 kinematic_set_columns = ['set', 'k', 'x_b', 'q_squared', 't', 'phi']
 
+# [NOTE]: Remember that we're not doing BCA, TSA, or XGAMMA yet:
+# observable_columnnames = [
+#     "unp_beam_unp_target_xsec", "unp_beam_unp_target_xsec_err", "unp_beam_unp_target_xsec_errsyst", "unp_beam_unp_target_xsec_errstat",
+#     "unp_target_bsa", "unp_target_bsa_err", "unp_target_bsa_errsyst", "unp_target_bsa_errstat", 
+#     "unp_target_bca", "unp_target_bca_err", "unp_target_bca_errsyst", "unp_target_bca_errstat", 
+#     "unp_target_lp_target_xsec", "unp_target_lp_target_xsec_err", "unp_target_lp_target_xsec_errsyst", "unp_target_lp_target_xsec_errstat", 
+#     "unp_target_tp_target_xsec", "unp_target_tp_target_xsec_err", "unp_target_tp_target_xsec_errsyst", "unp_target_tp_target_xsec_errstat", 
+#     "unp_target_xgamma", "unp_target_xgamma_err", "unp_target_xgamma_errsyst", "unp_target_xgamma_errstat", 
+#     ]
+
 observable_columnnames = [
     "unp_beam_unp_target_xsec", "unp_beam_unp_target_xsec_err", "unp_beam_unp_target_xsec_errsyst", "unp_beam_unp_target_xsec_errstat",
     "unp_target_bsa", "unp_target_bsa_err", "unp_target_bsa_errsyst", "unp_target_bsa_errstat", 
-    "unp_target_bca", "unp_target_bca_err", "unp_target_bca_errsyst", "unp_target_bca_errstat", 
-    "unp_target_lp_target_xsec", "unp_target_lp_target_xsec_err", "unp_target_lp_target_xsec_errsyst", "unp_target_lp_target_xsec_errstat", 
-    "unp_target_tp_target_xsec", "unp_target_tp_target_xsec_err", "unp_target_tp_target_xsec_errsyst", "unp_target_tp_target_xsec_errstat", 
-    "unp_target_xgamma", "unp_target_xgamma_err", "unp_target_xgamma_errsyst", "unp_target_xgamma_errstat", 
     ]
 
 #################################################################################
@@ -52,55 +58,103 @@ observable_columnnames = [
 #################################################################################
 
 df_experimental_data = pd.read_csv(
-    f'{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/main_experimental_file_v{MAJOR_MINOR_NUMBER}.csv')
+    f'{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/main_pseudodata_file_v{MAJOR_MINOR_NUMBER}.csv')
 
 df_length_before_merge = len(df_experimental_data)
+print(f"[INFO]: Number of initial rows: {df_length_before_merge}")
+df_cleaned = df_experimental_data.drop_duplicates().copy()
+print(f"[INFO]: Number of remaining rows after initial drop: {len(df_cleaned)}")
 
 #################################################################################
 # Begin the logic of combining redundant data:
 #################################################################################
 
-# group DF along set and phi to find duplicates...
-set_phi_tally_values = df_experimental_data.groupby(['set', 'phi']).size()
-duplicate_indices = set_phi_tally_values[set_phi_tally_values > 1].index
+df_unique_experimental_settings = df_cleaned.groupby(
+    [ 'k', 'q_squared', 'x_b', 't', 'phi'],
+    sort = False)
 
-if duplicate_indices.empty:
-    print("[INFO]: No duplicate rows for (set, phi) found. Everything looks clean.")
-else:
-    print(f"[INFO]: Found {len(duplicate_indices)} instances where a (set, phi) point is split.")
+print(f"[INFO]: Found {len(df_unique_experimental_settings)} unique kinematic points.")
 
-for set_index, phi_value in duplicate_indices:
-    print(f"[INFO]: Examining set = {set_index}, phi = {phi_value}")
-    fragmented_rows = df_experimental_data[(df_experimental_data['set'] == set_index) & (df_experimental_data['phi'] == phi_value)]
+merged_rows = []
+
+number_of_fragmented_points = 0
+number_of_successful_merges = 0
+number_of_all_zero_observables = 0
+number_of_fully_zero_rows_removed = 0
+number_of_conflicts = 0
+
+for group_key, group_df in df_unique_experimental_settings:
+
+    if len(group_df) == 1:
+        # just take the entire row and shove it into the list:
+        merged_rows.append(group_df.iloc[0])
+        continue
+
+    print(f"[INFO]: Found {len(group_df)} rows at {group_key}")
+    number_of_fragmented_points += 1
+
+    # define a "template row" that we'll now dynamically change:
+    merged_row = group_df.iloc[0].copy()
 
     for observable in observable_columnnames:
-        values = fragmented_rows[observable].values
-        has_zero = 0 in values
-        has_nonzero = any(value != 0 for value in values)
-        
-        if has_zero and has_nonzero:
-            print(f"[INFO]: Found mergeable data in '{observable}': {values}")
-        elif all(value == 0 for value in values):
-            print(f"[WARN]: '{observable}' is zero in all rows for this point.")
 
-other_columns = [
-    column for column in df_experimental_data.columns if column not in kinematic_set_columns and column not in observable_columnnames
-    ]
+        values = group_df[observable].values
+        # this removes NaN values, but we don't really expect that:
+        values = values[~pd.isna(values)]
 
-# this is required for Pandas to use agg()
-aggregation_logic = { column: 'sum' for column in observable_columnnames }
+        if len(values) == 0:
+            print("[WARN]: All values are NaN.")
+            merged_row[observable] = np.nan
 
-for column in other_columns:
-    aggregation_logic[column] = 'first'
+        nonzero_values = values[~np.isclose(values, 0.0)]
 
-merged_df_experimental_data = df_experimental_data.groupby(kinematic_set_columns, as_index = False).agg(aggregation_logic)
+        if len(nonzero_values) == 0:
 
-df_length_after_merge = len(merged_df_experimental_data)
+            print(f"[WARN]: All values are zero at {group_key}")
+            number_of_all_zero_observables += 1
+            merged_row[observable] = 0.0
 
-print(f"[INFO]: Rows reduced from {df_length_before_merge} to {df_length_after_merge} (Removed {df_length_before_merge - df_length_after_merge} redundancies).")
+            continue
 
-merged_df_experimental_data.to_csv(
-    f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/combined_experimental_file_v{MAJOR_MINOR_NUMBER}.csv", 
+        unique_nonzero_values = np.unique(nonzero_values)
+        # print(f"[INFO]: Nonzero values: {unique_nonzero_values}")
+
+        if len(unique_nonzero_values) == 1:
+
+            merged_value = unique_nonzero_values[0]
+
+            # print(f"[INFO]: Safe merge with value {merged_value}")
+            merged_row[observable] = merged_value
+            number_of_successful_merges += 1
+
+        else:
+            print(f"[ERROR]: Conflicting nonzero values detected: {unique_nonzero_values}")
+            number_of_conflicts += 1
+            merged_row[observable] = unique_nonzero_values[0]
+
+    merged_observable_values = pd.to_numeric(merged_row[observable_columnnames], errors = 'coerce' ).values
+    merged_observable_values = merged_observable_values[ ~pd.isna(merged_observable_values)]
+    all_observables_zero = np.all(np.isclose(merged_observable_values, 0))
+
+    if all_observables_zero:
+        print("[WARN]: Entire merged row has zero observables.")
+
+        number_of_fully_zero_rows_removed += 1
+
+        continue
+
+    merged_rows.append(merged_row)
+
+df_removed_redunancies = pd.DataFrame(merged_rows)
+
+print(f"[INFO]: Fragmented points found: {number_of_fragmented_points}")
+print(f"[INFO]: Successful observable merges: {number_of_successful_merges}")
+print(f"[INFO]: All-zero observable cases: {number_of_all_zero_observables}")
+print(f"[INFO]: Conflicting observables detected: {number_of_conflicts}")
+print(f"[INFO]: Final dataframe rows: {len(df_removed_redunancies)}")
+
+df_removed_redunancies.to_csv(
+    f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/refined_experimental_data_v{MAJOR_MINOR_NUMBER}.csv", 
     index = False)
 
 print("[INFO]: End of script reached!")
