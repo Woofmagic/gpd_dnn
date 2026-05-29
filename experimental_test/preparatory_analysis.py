@@ -1,10 +1,9 @@
-##########################################
+#################################################################################
 # FILE INFORMATION:
-# Purpose: move individual "set" data to their
-# respective kinematic set folder.
+# Purpose: move individual "set" data to their respective kinematic set folder.
 # Created: 20260504
-# Last changed: 20260504
-##########################################
+# Last changed: 20260528
+#################################################################################
 
 print("[INFO]: Script began running!")
 
@@ -101,6 +100,7 @@ for kinematic_set_number, kinematic_group in main_experimental_datafile.groupby(
     os.makedirs(f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_set_{kinematic_set_number}/learning_curves", exist_ok = True)
     os.makedirs(f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_set_{kinematic_set_number}/replicas", exist_ok = True)
     
+    # extract the data for a single kinematic setting:
     set_data = main_experimental_datafile[main_experimental_datafile['set'] == kinematic_set_number]
 
     # if it's the same kinematic setting, then these mean()s should be the equivalence class value...
