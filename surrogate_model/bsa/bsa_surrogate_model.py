@@ -18,7 +18,6 @@ import sys
 import pandas as pd
 import numpy as np
 import tensorflow as tf
-from sklearn.model_selection import train_test_split
 
 #################################################################################
 # HPC logic:
@@ -52,7 +51,6 @@ MAJOR_MINOR_NUMBER = f"{VERSION_NUMBER}_{MINOR_NUMBER}"
 # Model hyperparameters:
 #################################################################################
 
-# samples within experimental error:
 USING_GAUSSIAN_ERROR_SAMPLING = True
 
 BASE_LEARNING_RATE = 3e-4
@@ -63,75 +61,38 @@ _BATCH_SIZE = 8
 # Loading the data!
 #################################################################################
 
-test_dataframe = pd.read_csv('./data/burner_data.csv')
-
-#################################################################################
-# We now save the *original values* of the experimental datapoint.
-#################################################################################
-
-# BSA column:
-test_dataframe['original_bsa'] = test_dataframe['unp_target_bsa']
-
-#################################################################################
-# Finally creating the pseudodata:
-#################################################################################
-
-if USING_GAUSSIAN_ERROR_SAMPLING:
-
-    test_dataframe['unp_target_bsa'] = np.random.normal(
-        loc = test_dataframe['original_bsa'],
-        scale = test_dataframe['unp_target_bsa_err']
-    )
-
-#################################################################################
-# Split into (x, y) supervised pairs!
-#################################################################################
-
-x_data = test_dataframe[["t", "x_b", "q_squared", "phi"]]
-y_data = test_dataframe["unp_target_bsa"]
-
-TOTAL_DATA_SIZE = len(x_data)
-print(f"[NOTE]: Total data size is: {TOTAL_DATA_SIZE}")
-
-#################################################################################
-# Train/validation/testing splitting!
-#################################################################################
-
-# 90% temporary, 10% testing
-_DNN_TESTING_TEMPORARY_SPLIT_PERCENTAGE = 0.1 
-# of the above 90% temporary, 90% training, 10% validation
-_DNN_TRAINING_VALIDATION_SPLIT_PERCENTAGE = 0.1
-
-number_of_dnn_temporary_points = int(np.ceil(TOTAL_DATA_SIZE * _DNN_TESTING_TEMPORARY_SPLIT_PERCENTAGE))
-number_of_dnn_testing_points = TOTAL_DATA_SIZE - number_of_dnn_temporary_points
-number_of_dnn_training_points = int(np.ceil(number_of_dnn_temporary_points * _DNN_TRAINING_VALIDATION_SPLIT_PERCENTAGE))
-number_of_dnn_validation_points = TOTAL_DATA_SIZE - number_of_dnn_training_points - number_of_dnn_testing_points
-
-print(f"[NOTE]: Testing/Temporary Split is {_DNN_TESTING_TEMPORARY_SPLIT_PERCENTAGE * 100}%, giving {number_of_dnn_testing_points} testing points (with ceiling).")
-print(f"[NOTE]: Training/Validation Split is {_DNN_TRAINING_VALIDATION_SPLIT_PERCENTAGE * 100}%, giving {number_of_dnn_validation_points} validation points (with ceiling).")
-print(f"[NOTE]: Remaining training data points are: {number_of_dnn_training_points}")
-
-x_remaining, x_testing, y_remaining, y_testing = train_test_split(
-    x_data, y_data,
-    test_size = _DNN_TESTING_TEMPORARY_SPLIT_PERCENTAGE, shuffle = True)
-
-x_training, x_validation, y_training, y_validation = train_test_split(
-    x_remaining, y_remaining,
-    test_size = _DNN_TRAINING_VALIDATION_SPLIT_PERCENTAGE, shuffle = True)
-
-print(f"[NOTE]: x-training size is: {len(x_training)}")
-print(f"[NOTE]: x-validation size is: {len(x_validation)}")
-print(f"[NOTE]: x-testing size is: {len(x_testing)}")
-
-# augment rows with train/test/val
-test_dataframe.loc[x_training.index, 'split'] = 'train'
-test_dataframe.loc[x_validation.index, 'split'] = 'validation'
-test_dataframe.loc[x_testing.index, 'split'] = 'test'
-
-test_dataframe.to_csv(
-    path_or_buf = f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/dnn_data_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.csv",
-    index = False
+dnn_replica_data = pd.read_csv(
+    filepath_or_buffer = f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/dnn_data_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.csv"
 )
+
+# we will use this to make predictions across the *entire* dataset!
+x_data = dnn_replica_data[["t", "x_b", "q_squared", "phi"]]
+y_data = dnn_replica_data["unp_target_bsa"]
+
+#################################################################################
+# Partitioning the data into its train/val/test flags:
+#################################################################################
+
+training_df = dnn_replica_data[dnn_replica_data["split"] == "train"]
+validation_df = dnn_replica_data[dnn_replica_data["split"] == "validation"]
+testing_df = dnn_replica_data[dnn_replica_data["split"] == "test"]
+
+number_of_dnn_training_points = len(training_df)
+number_of_dnn_validation_points = len(validation_df)
+number_of_dnn_testing_points = len(testing_df)
+
+x_training = training_df[["t", "x_b", "q_squared", "phi"]]
+y_training = training_df[["unp_target_bsa"]]
+
+x_validation = validation_df[["t", "x_b", "q_squared", "phi"]]
+y_validation = validation_df[["unp_target_bsa"]]
+
+x_testing = testing_df[["t", "x_b", "q_squared", "phi"]]
+y_testing = testing_df[["unp_target_bsa"]]
+
+if number_of_dnn_training_points <= _BATCH_SIZE:
+    print(f"[WARN]: Number of training points is less than or equal to the batch size. Setting batch size equal to {number_of_dnn_training_points}.")
+    _BATCH_SIZE = number_of_dnn_training_points
 
 #################################################################################
 # TensorFlow model!
@@ -215,25 +176,25 @@ prediction_results = x_data.copy()
 # Original experimental data:
 #################################################################################
 
-prediction_results['original_bsa'] = test_dataframe['original_bsa'].values
+prediction_results['original_bsa'] = dnn_replica_data['original_bsa'].values
 
 #################################################################################
 # Experimental uncertainty:
 #################################################################################
 
-prediction_results['bsa_err'] = test_dataframe['unp_target_bsa_err'].values
+prediction_results['bsa_err'] = dnn_replica_data['unp_target_bsa_err'].values
 
 #################################################################################
 # Experimental uncertainty:
 #################################################################################
 
-prediction_results['replica_bsa'] = test_dataframe['unp_target_bsa'].values
+prediction_results['replica_bsa'] = dnn_replica_data['unp_target_bsa'].values
 
 #################################################################################
 # DNN predictions:
 #################################################################################
 
-prediction_results['pred_bsa']  = y_predictions[:, 0]
+prediction_results['pred_bsa'] = y_predictions[:, 0]
 prediction_results['replica_number'] = replica_number
 
 prediction_results.to_csv(
@@ -331,4 +292,3 @@ del dnn_model
 gc.collect()
 
 print("[INFO]: End of script reached!")
-
