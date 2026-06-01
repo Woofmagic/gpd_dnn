@@ -22,23 +22,23 @@ from pathlib import Path
 # Matplotlib Plotting Customizability
 #################################################################################
 
-plt.rcParams.update({
-    "text.usetex": True, "font.family": "serif",
-})
+plt.rcParams.update({"text.usetex": True, "font.family": "serif"})
 plt.rcParams['xtick.direction'] = 'in'
 plt.rcParams['xtick.major.size'] = 8.5
 plt.rcParams['xtick.major.width'] = 0.5
-plt.rcParams['xtick.minor.size'] = 2.5
+plt.rcParams['xtick.minor.size'] = 3.5
 plt.rcParams['xtick.minor.width'] = 0.5
 plt.rcParams['xtick.minor.visible'] = True
 plt.rcParams['xtick.top'] = True
+plt.rcParams['xtick.labelsize'] = 15
 plt.rcParams['ytick.direction'] = 'in'
 plt.rcParams['ytick.major.size'] = 8.5
 plt.rcParams['ytick.major.width'] = 0.5
-plt.rcParams['ytick.minor.size'] = 2.5
+plt.rcParams['ytick.minor.size'] = 3.5
 plt.rcParams['ytick.minor.width'] = 0.5
 plt.rcParams['ytick.minor.visible'] = True
 plt.rcParams['ytick.right'] = True
+plt.rcParams['ytick.labelsize'] = 14
 plt.rcParams['savefig.dpi'] = 300
 
 #################################################################################
