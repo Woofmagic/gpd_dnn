@@ -173,6 +173,12 @@ y_predictions = dnn_model.predict(x_data)
 prediction_results = x_data.copy()
 
 #################################################################################
+# Preserve split labels
+#################################################################################
+
+prediction_results['split'] = dnn_replica_data['split'].values
+
+#################################################################################
 # Original experimental data:
 #################################################################################
 
@@ -185,7 +191,7 @@ prediction_results['original_bsa'] = dnn_replica_data['original_bsa'].values
 prediction_results['bsa_err'] = dnn_replica_data['unp_target_bsa_err'].values
 
 #################################################################################
-# Experimental uncertainty:
+# Replica values:
 #################################################################################
 
 prediction_results['replica_bsa'] = dnn_replica_data['unp_target_bsa'].values
@@ -195,6 +201,11 @@ prediction_results['replica_bsa'] = dnn_replica_data['unp_target_bsa'].values
 #################################################################################
 
 prediction_results['pred_bsa'] = y_predictions[:, 0]
+
+#################################################################################
+# Metadata
+#################################################################################
+
 prediction_results['replica_number'] = replica_number
 
 prediction_results.to_csv(
