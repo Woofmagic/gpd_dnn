@@ -56,6 +56,7 @@ USING_GAUSSIAN_ERROR_SAMPLING = True
 BASE_LEARNING_RATE = 3e-4
 _NUMBER_OF_EPOCHS = 1000
 _BATCH_SIZE = 8
+SYMMETRY_LOSS_WEIGHT = 0.0
 
 #################################################################################
 # Loading the data!
@@ -98,31 +99,119 @@ if number_of_dnn_training_points <= _BATCH_SIZE:
 # TensorFlow model!
 #################################################################################
 
-def cff_h_model():
-    # initializer:
-    initializer = tf.keras.initializers.GlorotNormal(seed = None)
+class CrossSectionLoss(tf.keras.losses.Loss):
+    def call(self, y_true, y_pred):
+        return tf.reduce_mean(tf.square(y_true - y_pred))
+    
+class CrossSectionSurrogateModel(tf.keras.Model):
 
-    # input layer:
-    model_inputs = tf.keras.Input(shape = (4,), name = "input_values")
+    # https://keras.io/api/models/model/ -> follow this for custom model architecture
 
-    # hidden layers:
-    hidden = tf.keras.layers.Dense(
-        64, kernel_initializer = initializer, activation = "tanh")(model_inputs)
-    hidden = tf.keras.layers.Dense(
-        64, kernel_initializer = initializer, activation = "tanh")(hidden)
-    hidden = tf.keras.layers.Dense(
-        64, kernel_initializer = initializer, activation = "tanh")(hidden)
+    def __init__(self, symmetry_loss_weight = 1.0):
+        super().__init__()
 
-    # output layer:
-    model_output = tf.keras.layers.Dense(1, activation = "linear")(hidden)
+        self.symmetry_loss_weight = symmetry_loss_weight
 
-    model = tf.keras.Model(inputs = model_inputs, outputs = model_output)
+        # self.data_loss_tracker = tf.keras.metrics.Mean(name = "data_loss")
+        # self.symmetry_loss_tracker = tf.keras.metrics.Mean(name = "symmetry_loss")
 
-    model.compile(
-        optimizer = tf.keras.optimizers.Adam(learning_rate = BASE_LEARNING_RATE),
-        loss = tf.keras.losses.MeanSquaredError())
+        initializer = tf.keras.initializers.GlorotNormal(seed = None)
 
-    return model
+        self.dense_layer_1 = tf.keras.layers.Dense(32, kernel_initializer = initializer, activation = "tanh")
+        self.dense_layer_2 = tf.keras.layers.Dense(32, kernel_initializer = initializer, activation = "tanh")
+        self.dense_layer_3 = tf.keras.layers.Dense(32, kernel_initializer = initializer, activation = "tanh")
+
+        # linear activation is default activation if `activation` key is not specified: https://www.tensorflow.org/api_docs/python/tf/keras/layers/Dense
+        self.cross_section_output = tf.keras.layers.Dense(1, activation = "linear", name = "cross_section")
+
+        # custom loss business:
+        self.cross_section_loss_tracker = CrossSectionLoss()
+
+    def azimuthal_symmetry_loss(self, X_batch, training = True):
+
+        X_plus = X_batch
+
+        phi = X_batch[:, -1]
+
+        X_minus = tf.concat([X_batch[:, :-1], tf.expand_dims(-phi, axis = 1)], axis = 1)
+
+        y_plus = self(X_plus, training = training)
+        y_minus = self(X_minus, training = training)
+
+        return tf.reduce_mean(tf.square(y_plus - y_minus))
+
+    def call(self, inputs, training = False):
+
+        # hidden layer computation:
+        hidden_layer = self.dense_layer_1(inputs)
+        hidden_layer = self.dense_layer_2(hidden_layer)
+        hidden_layer = self.dense_layer_3(hidden_layer)
+        cross_section_output = self.cross_section_output(hidden_layer)
+
+        return cross_section_output
+    
+    def train_step(self, data):
+
+        # unpack data:
+        X_batch_data, y_batch_data = data
+
+        with tf.GradientTape() as tape:
+            # forward pass:
+            predictions = self(X_batch_data, training = True)
+
+            # recall: `Instead, use `model.compute_loss(x, y, y_pred, sample_weight)`
+            data_loss = self.compute_loss(X_batch_data, y_batch_data, predictions)
+
+            # compute phi symmetry loss:
+            symmetry_loss = self.azimuthal_symmetry_loss(X_batch_data, training = True)
+
+            # total loss is just a weighted sum:
+            total_loss = data_loss + self.symmetry_loss_weight * symmetry_loss
+
+        gradients = tape.gradient(total_loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients,self.trainable_variables))
+
+        for metric in self.metrics:
+            if metric.name == "loss":
+                metric.update_state(total_loss)
+            else:
+                metric.update_state(y_batch_data, predictions)
+
+        return {
+            "loss": total_loss,
+            "data_loss": data_loss,
+            "symmetry_loss": symmetry_loss,
+            **{m.name: m.result() for m in self.metrics}
+        }
+
+    def test_step(self, data):
+        # unpack data:
+        X_batch_data, y_batch_data = data
+        
+        # forward pass evaluation:
+        predictions = self(X_batch_data, training = False)
+
+        # recall: `Instead, use `model.compute_loss(x, y, y_pred, sample_weight)`
+        data_loss = self.compute_loss(X_batch_data, y_batch_data, predictions)
+
+         # compute phi symmetry loss:
+        symmetry_loss = self.azimuthal_symmetry_loss(X_batch_data, training = False)
+
+        # total loss is just a weighted sum:
+        total_loss = data_loss + self.symmetry_loss_weight * symmetry_loss
+
+        for metric in self.metrics:
+            if metric.name == "loss":
+                metric.update_state(total_loss)
+            else:
+                metric.update_state(y_batch_data, predictions)
+            
+        return {
+            "loss": total_loss,
+            "data_loss": data_loss,
+            "symmetry_loss": symmetry_loss,
+            **{m.name: m.result() for m in self.metrics}
+        }
 
 #################################################################################
 # Training!
@@ -131,7 +220,10 @@ def cff_h_model():
 tf.keras.backend.clear_session()
 gc.collect()
 
-dnn_model = cff_h_model()
+dnn_model = CrossSectionSurrogateModel(symmetry_loss_weight = SYMMETRY_LOSS_WEIGHT)
+dnn_model.compile(
+    optimizer = tf.keras.optimizers.Adam(BASE_LEARNING_RATE),
+    loss = CrossSectionLoss())
 
 dnn_model_history = dnn_model.fit(
     x_training, y_training,
@@ -152,9 +244,11 @@ dnn_model.save(f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/replicas/replica_{r
 # Post-train evaluation and analysis and metadata collection:
 #################################################################################
 
+# just get the number of epochs:
 number_of_epochs_run = len(dnn_model_history.epoch)
 print(f"[INFO]: The model ran for {number_of_epochs_run} epochs before early stopping.")
 
+# cast training history into dataframe and csv:
 history_df = pd.DataFrame(dnn_model_history.history)
 history_df['epoch'] = range(1, len(history_df) + 1)
 history_df.to_csv(f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/replica_{replica_number}_history.csv", index = False)
@@ -168,6 +262,7 @@ pd.DataFrame(
     f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/replica_{replica_number}_test_metrics.csv", 
     index = False)
 
+# make the predictions:
 y_predictions = dnn_model.predict(x_data)
 
 prediction_results = x_data.copy()
@@ -194,13 +289,13 @@ prediction_results['xsec_err'] = dnn_replica_data['unp_beam_unp_target_xsec_err'
 # Replica values: 
 #################################################################################
 
-prediction_results['replica_xsec'] = dnn_replica_data['unp_beam_unp_target_xsec'].values
+prediction_results['pseudodata_xsec_value'] = dnn_replica_data['unp_beam_unp_target_xsec'].values
 
 #################################################################################
 # DNN predictions:
 #################################################################################
 
-prediction_results['pred_xsec'] = y_predictions[:, 0]
+prediction_results['predicted_cross_section'] = y_predictions[:, 0]
 
 #################################################################################
 # Metadata
@@ -213,64 +308,6 @@ prediction_results.to_csv(
     index = False)
 
 #################################################################################
-# Smooth replica surface across t, xb, q_squared, and phi:
-#################################################################################
-
-print("[INFO]: Computing smooth phi predictions...")
-
-t_min = x_data['t'].min()
-t_max = x_data['t'].max()
-
-print(f"[INFO]: bounding for t: {t_min} < t < {t_max}")
-
-xb_min = x_data['x_b'].min()
-xb_max = x_data['x_b'].max()
-
-print(f"[INFO]: bounding for xb: {xb_min} < x_b < {xb_max}")
-
-q2_min = x_data['q_squared'].min()
-q2_max = x_data['q_squared'].max()
-
-print(f"[INFO]: bounding for Q^2: {q2_min} < Q^2 < {q2_max}")
-
-NUMBER_OF_T = 10
-NUMBER_OF_XB = 10
-NUMBER_OF_Q2 = 10
-NUMBER_OF_PHI = 361
-
-t_grid = np.round(np.linspace(t_min, t_max, NUMBER_OF_T), 3)
-xb_grid = np.round(np.linspace(xb_min, xb_max, NUMBER_OF_XB), 4)
-q2_grid = np.round(np.linspace(q2_min, q2_max, NUMBER_OF_Q2), 3)
-phi_grid = np.linspace(-np.pi, np.pi, NUMBER_OF_PHI)
-
-mesh = np.meshgrid(t_grid, xb_grid, q2_grid, phi_grid, indexing = 'ij')
-
-t_flat = mesh[0].ravel()
-xb_flat = mesh[1].ravel()
-q2_flat = mesh[2].ravel()
-phi_flat = mesh[3].ravel()
-
-smooth_input = pd.DataFrame({
-    't': t_flat,
-    'x_b': xb_flat,
-    'q_squared': q2_flat,
-    'phi': phi_flat
-})
-
-smooth_predictions = dnn_model.predict(smooth_input, verbose = 0)
-
-# making predictions
-smooth_input['pred_xsec'] = smooth_predictions[:, 0]
-
-smooth_input.to_csv(
-    f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/"
-    f"replica_{replica_number}_smooth_predictions.csv",
-    index = False
-)
-
-print("[INFO]: Smooth predictions saved.")
-
-#################################################################################
 # Metadata dump:
 #################################################################################
 
@@ -279,13 +316,10 @@ metadata = {
     "version": MAJOR_MINOR_NUMBER,
     "batch_size": _BATCH_SIZE,
     "max_epochs": _NUMBER_OF_EPOCHS,
+    "base_learning_rate": BASE_LEARNING_RATE,
     "actual_epochs": len(dnn_model_history.epoch),
     "training_points": len(x_training),
     "features": list(x_training.columns),
-    "number_of_t": NUMBER_OF_T,
-    "number_of_xb": NUMBER_OF_XB,
-    "number_of_q2": NUMBER_OF_Q2,
-    "number_of_phi_deg": NUMBER_OF_PHI
 }
 
 with open(
