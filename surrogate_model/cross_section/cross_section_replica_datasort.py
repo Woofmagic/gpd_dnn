@@ -59,7 +59,7 @@ replica_number = int(sys.argv[1])
 
 # this reads the pseudodata!
 pseudodata_dataframe = pd.read_csv(
-    filepath_or_buffer = f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/refined_experimental_data_v{MAJOR_MINOR_NUMBER}.csv"
+    filepath_or_buffer = f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/refined_cross_section_data_v{MAJOR_MINOR_NUMBER}.csv"
 )
 
 #################################################################################
