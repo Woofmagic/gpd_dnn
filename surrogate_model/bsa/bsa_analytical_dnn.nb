@@ -1,0 +1,601 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Mathematica 13.3' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       158,          7]
+NotebookDataLength[     21981,        593]
+NotebookOptionsPosition[     17543,        504]
+NotebookOutlinePosition[     17935,        520]
+CellTagsIndexPosition[     17892,        517]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell["Exploring the DNN Model of the BSA(\[CapitalLambda] = 0) Observable:", \
+"Title",
+ CellChangeTimes->{{3.990091217769167*^9, 
+  3.9900912336311007`*^9}},ExpressionUUID->"37c9a9e0-d64d-4907-ab53-\
+a8e654d0eb46"],
+
+Cell[CellGroupData[{
+
+Cell["(#0): Initializing Cells:", "Chapter",
+ CellChangeTimes->{{3.990091244548318*^9, 3.99009126400111*^9}, {
+  3.9900932077534857`*^9, 
+  3.990093210454516*^9}},ExpressionUUID->"1f30cb68-9094-49ed-ae04-\
+28c6ac9dd904"],
+
+Cell[CellGroupData[{
+
+Cell["(#0.1): Glorot Uniform Distribution:", "Section",
+ CellChangeTimes->{{3.9900932085626917`*^9, 3.990093216210346*^9}, {
+  3.990094630774269*^9, 
+  3.9900946426428747`*^9}},ExpressionUUID->"48f8ab27-86bb-4754-9b1a-\
+46b31ced98cb"],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"glorotNormalMatrix", "[", 
+   RowBox[{"previousLayerDimension_", ",", "finalLayerDimension_"}], "]"}], ":=",
+   "\[IndentingNewLine]", 
+  RowBox[{"RandomVariate", "[", "\[IndentingNewLine]", 
+   RowBox[{
+    RowBox[{"NormalDistribution", "[", 
+     RowBox[{"0", ",", 
+      SqrtBox[
+       FractionBox["2", 
+        RowBox[{
+        "previousLayerDimension", " ", "+", " ", "finalLayerDimension"}]]]}], 
+     "]"}], ",", " ", 
+    RowBox[{"(*", " ", 
+     RowBox[{
+     "zero", " ", "mean", " ", "and", " ", "some", " ", "specific", " ", 
+      RowBox[{"spread", "--"}], "look", " ", "online", " ", "for", " ", 
+      "\"\<Xavier Normal\>\""}], "*)"}], "\[IndentingNewLine]", 
+    RowBox[{"{", 
+     RowBox[{"finalLayerDimension", ",", "previousLayerDimension"}], "}"}]}], 
+   "\[IndentingNewLine]", "]"}]}]], "Input",
+ InitializationCell->True,
+ CellChangeTimes->{{3.990094748425466*^9, 3.9900948062043877`*^9}},
+ CellLabel->"In[57]:=",ExpressionUUID->"6ec41f3f-c482-4112-bc76-23fb5729746d"],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"glorotNormalMatrix", "[", 
+   RowBox[{"2", ",", "4"}], "]"}], "//", "MatrixForm"}]], "Input",
+ CellChangeTimes->{{3.990094810319853*^9, 3.990094819184208*^9}},
+ CellLabel->"In[60]:=",ExpressionUUID->"3fa9a20d-b3dd-4d23-b10c-c83a4bcb3aae"]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["(#1): Analytical DNN Model:", "Chapter",
+ CellChangeTimes->{{3.9900912890558357`*^9, 3.990091298068054*^9}, 
+   3.990091331613093*^9},ExpressionUUID->"1dea27fa-5372-4d1f-8cb5-\
+18a715fdb301"],
+
+Cell[CellGroupData[{
+
+Cell["(#1.1): Definition of the analytical model:", "Section",
+ CellChangeTimes->{{3.990091324961059*^9, 3.990091336846183*^9}, {
+  3.990092477035265*^9, 
+  3.990092478758068*^9}},ExpressionUUID->"400620c8-2efe-4eae-b53e-\
+cd10bc912945"],
+
+Cell[TextData[{
+ "Recall that the features are t, ",
+ Cell[BoxData[
+  FormBox[
+   SubscriptBox["x", "B"], TraditionalForm]],
+  FormatType->TraditionalForm,ExpressionUUID->
+  "1d58214b-2f9c-4a5f-b298-d3eaf1faba06"],
+ ", ",
+ Cell[BoxData[
+  FormBox[
+   SuperscriptBox["Q", "2"], TraditionalForm]],
+  FormatType->TraditionalForm,ExpressionUUID->
+  "27ddd8b8-c061-497e-b9fd-e92d9a8e0517"],
+ ", and \[Phi] and the single label is the BSA(\[CapitalLambda]=0):\n1. \
+Activation functions are tanh\n2. Hidden layers are initialized by \
+GlorotUniform"
+}], "Text",
+ CellChangeTimes->{{3.990091344133676*^9, 3.9900913693856*^9}, {
+  3.99009143851153*^9, 3.9900914515540657`*^9}, {3.9900948414709*^9, 
+  3.99009485009022*^9}},ExpressionUUID->"f1565a52-b2c1-49a7-8065-\
+8c998a340ce9"],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{
+   RowBox[{"BSASurrogateDNNModel", "[", 
+    RowBox[{"t_", ",", "xb_", ",", "qsq_", ",", "\[Phi]_"}], "]"}], "=", 
+   "\[IndentingNewLine]", 
+   RowBox[{
+    RowBox[{"glorotNormalMatrix", "[", 
+     RowBox[{"16", ",", "1"}], "]"}], ".", "\[IndentingNewLine]", 
+    RowBox[{"Tanh", "[", "\[IndentingNewLine]", 
+     RowBox[{"(*", " ", 
+      RowBox[{"preactivations", " ", "layer", " ", "3"}], " ", "*)"}], 
+     "\[IndentingNewLine]", 
+     RowBox[{
+      RowBox[{"glorotNormalMatrix", "[", 
+       RowBox[{"16", ",", "16"}], "]"}], ".", "\[IndentingNewLine]", 
+      RowBox[{"Tanh", "[", "\[IndentingNewLine]", 
+       RowBox[{"(*", " ", 
+        RowBox[{"preactivations", " ", "layer", " ", "2"}], " ", "*)"}], 
+       "\[IndentingNewLine]", 
+       RowBox[{
+        RowBox[{"glorotNormalMatrix", "[", 
+         RowBox[{"16", ",", "16"}], "]"}], ".", "\[IndentingNewLine]", 
+        RowBox[{"Tanh", "[", "\[IndentingNewLine]", 
+         RowBox[{"(*", " ", 
+          RowBox[{"preactivaitons", " ", "layer", " ", "1"}], " ", "*)"}], 
+         "\[IndentingNewLine]", 
+         RowBox[{
+          RowBox[{"glorotNormalMatrix", "[", 
+           RowBox[{"4", ",", "16"}], "]"}], ".", "\[IndentingNewLine]", 
+          RowBox[{"(*", " ", 
+           RowBox[{"feature", " ", "vector"}], " ", "*)"}], 
+          "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "xb", ",", "qsq", ",", "\[Phi]"}], "}"}]}], 
+         "\[IndentingNewLine]", "]"}]}], "\[IndentingNewLine]", "]"}]}], 
+     "\[IndentingNewLine]", "]"}]}]}], ";"}]], "Input",
+ CellChangeTimes->{{3.989338010512157*^9, 3.989338175099409*^9}, {
+   3.990091456272977*^9, 3.990091466917433*^9}, {3.990091549064659*^9, 
+   3.990091552300967*^9}, {3.990092496859934*^9, 3.990092507517992*^9}, {
+   3.990092564430209*^9, 3.9900926005386467`*^9}, {3.990092634877304*^9, 
+   3.990092692886291*^9}, {3.990093229147305*^9, 3.990093230677026*^9}, {
+   3.9900948587251596`*^9, 3.990094884201563*^9}, 3.990094919850399*^9},
+ CellLabel->"In[64]:=",ExpressionUUID->"8a22c379-57bc-481a-b816-dfbd420845b2"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[TextData[{
+ "(#1.2): Evaluating the ",
+ StyleBox["untrained model ",
+  FontSlant->"Italic"],
+ "for some random values of t, ",
+ Cell[BoxData[
+  FormBox[
+   SubscriptBox["x", "B"], TraditionalForm]],
+  FormatType->TraditionalForm,ExpressionUUID->
+  "5a73d752-3c16-4bbd-85d1-35ebd5481388"],
+ ", ",
+ Cell[BoxData[
+  FormBox[
+   SuperscriptBox["Q", "2"], TraditionalForm]],
+  FormatType->TraditionalForm,ExpressionUUID->
+  "f3ebbef2-bd5f-4c3a-9bac-54c9cb7118d6"],
+ ", and \[Phi]:"
+}], "Section",
+ CellChangeTimes->{{3.990091507762464*^9, 
+  3.990091540798114*^9}},ExpressionUUID->"e29b9183-9f8d-436b-b179-\
+45b7c97732e0"],
+
+Cell[BoxData[
+ RowBox[{"BSASurrogateDNNModel", "[", 
+  RowBox[{
+   RowBox[{"-", "0.1337"}], ",", " ", "0.1342", ",", " ", "1.1661", ",", 
+   "2.792077"}], "]"}]], "Input",
+ CellChangeTimes->{{3.9893380563211727`*^9, 3.989338099540124*^9}, {
+   3.990091492015471*^9, 3.9900915013540363`*^9}, 3.990092667478314*^9},
+ CellLabel->"In[69]:=",ExpressionUUID->"14dd14d7-69af-4d87-a92e-4d60dc1ef008"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["(#1.A): Gradient Descent Analysis:", "Section",
+ CellChangeTimes->{{3.990092721634014*^9, 
+  3.99009273200592*^9}},ExpressionUUID->"9708cd69-4239-40de-b83a-\
+79e9573a9170"],
+
+Cell["Just checking some stuff...", "Text",
+ CellChangeTimes->{{3.990092784799954*^9, 
+  3.99009278824552*^9}},ExpressionUUID->"6126e31b-855b-4aeb-b433-\
+72cc39d9e854"],
+
+Cell[BoxData[
+ RowBox[{"D", "[", 
+  RowBox[{
+   RowBox[{"BSASurrogateDNNModel", "[", 
+    RowBox[{"t", ",", "xb", ",", "qsq", ",", "\[Phi]"}], "]"}], ",", "t"}], 
+  "]"}]], "Input",
+ CellChangeTimes->{{3.990092744519611*^9, 3.990092773833631*^9}, {
+   3.990093123384737*^9, 3.990093155055216*^9}, {3.9900931923714323`*^9, 
+   3.9900931927897587`*^9}, 3.990094926590616*^9},
+ CellLabel->"In[70]:=",ExpressionUUID->"2742412e-4e87-4475-addc-92780b27fd4d"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["(#1.B): Plots of the analytical model:", "Section",
+ CellChangeTimes->{{3.99009246648137*^9, 3.9900924751392717`*^9}, {
+  3.990092716455329*^9, 3.9900927186799*^9}, {3.990092795154092*^9, 
+  3.990092795582192*^9}},ExpressionUUID->"12bf6af7-0101-409c-8d31-\
+bd5f349e2749"],
+
+Cell[TextData[{
+ "The main thing we want to check here is that ",
+ StyleBox["untrained weights do not lead to miraculous fits!",
+  FontSlant->"Italic"]
+}], "Text",
+ CellChangeTimes->{{3.99009248309009*^9, 3.990092492155439*^9}, {
+  3.9900925373017673`*^9, 
+  3.990092544730504*^9}},ExpressionUUID->"cca6a2b0-3b46-4330-b4a0-\
+a83d00aff74b"],
+
+Cell[BoxData[
+ RowBox[{"Plot", "[", 
+  RowBox[{
+   RowBox[{"BSASurrogateDNNModel", "[", 
+    RowBox[{
+     RowBox[{"-", "0.5"}], ",", "0.2", ",", "2.4", ",", "\[Phi]"}], "]"}], 
+   ",", 
+   RowBox[{"{", 
+    RowBox[{"\[Phi]", ",", "0", ",", 
+     RowBox[{"2", "\[Pi]"}]}], "}"}]}], "]"}]], "Input",
+ CellChangeTimes->{{3.990091150097321*^9, 3.990091170922534*^9}, 
+   3.990092668482547*^9},
+ CellLabel->"In[71]:=",ExpressionUUID->"3fb91393-e58d-485b-b332-df14f0d32431"],
+
+Cell[CellGroupData[{
+
+Cell["(#1.B.1): Untrained model surface across t and \[Phi]:", "Subsection",
+ CellChangeTimes->{{3.9900939124666653`*^9, 
+  3.990093927196046*^9}},ExpressionUUID->"8be8153e-c008-4d5e-9e8a-\
+76371e8367b1"],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"(*", " ", 
+   RowBox[{"Fixing", " ", 
+    SubscriptBox["x", "B"], " ", "and", " ", 
+    SuperscriptBox["Q", "2"], " ", 
+    RowBox[{"here", "!"}]}], " ", "*)"}], "\[IndentingNewLine]", 
+  RowBox[{"Plot3D", "[", "\[IndentingNewLine]", 
+   RowBox[{
+    RowBox[{"BSASurrogateDNNModel", "[", 
+     RowBox[{"t", ",", "0.2", ",", "2.4", ",", "\[Phi]"}], "]"}], ",", 
+    RowBox[{"{", 
+     RowBox[{"\[Phi]", ",", "0", ",", 
+      RowBox[{"2", "\[Pi]"}]}], "}"}], ",", 
+    RowBox[{"{", 
+     RowBox[{"t", ",", 
+      RowBox[{"-", "1.0"}], ",", 
+      RowBox[{"-", "0.1"}]}], "}"}], ",", "\[IndentingNewLine]", 
+    RowBox[{
+    "PlotLabel", "->", 
+     "\"\<BSA Surrogate DNN Foliataion Across \[Phi] and t\>\""}], ",", 
+    "\[IndentingNewLine]", 
+    RowBox[{"AxesLabel", "->", 
+     RowBox[{"{", 
+      RowBox[{
+      "\"\<\[Phi] (radians)\>\"", ",", 
+       "\"\<t (\!\(\*SuperscriptBox[\(GeV\), \(2\)]\))\>\"", ",", 
+       "\"\<DNN Evaluation\>\""}], "}"}]}]}], "]"}]}]], "Input",
+ CellChangeTimes->{{3.990093266795204*^9, 3.990093304650838*^9}, {
+  3.990093346959689*^9, 3.990093374155895*^9}, {3.990093458524694*^9, 
+  3.990093472962099*^9}},
+ CellLabel->"In[72]:=",ExpressionUUID->"4886c454-9178-4045-afa3-cdaa3cd3fe35"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[TextData[{
+ "(#1.B.2): Untrained model surface across ",
+ Cell[BoxData[
+  FormBox[
+   SubscriptBox["x", "B"], TraditionalForm]],
+  FormatType->TraditionalForm,ExpressionUUID->
+  "63ab6616-fa00-4920-9b6c-b593a89ae10f"],
+ " and \[Phi]:"
+}], "Subsection",
+ CellChangeTimes->{{3.990093931172843*^9, 
+  3.99009393598*^9}},ExpressionUUID->"91eb4d32-e7aa-467b-aa90-7638baa96ca9"],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"(*", " ", 
+   RowBox[{"Fixing", " ", "t", " ", "and", " ", 
+    SuperscriptBox["Q", "2"], " ", 
+    RowBox[{"here", "!"}]}], " ", "*)"}], "\[IndentingNewLine]", 
+  RowBox[{"Plot3D", "[", "\[IndentingNewLine]", 
+   RowBox[{
+    RowBox[{"BSASurrogateDNNModel", "[", 
+     RowBox[{
+      RowBox[{"-", "0.5"}], ",", "xb", ",", "2.4", ",", "\[Phi]"}], "]"}], 
+    ",", 
+    RowBox[{"{", 
+     RowBox[{"\[Phi]", ",", "0", ",", 
+      RowBox[{"2", "\[Pi]"}]}], "}"}], ",", 
+    RowBox[{"{", 
+     RowBox[{"xb", ",", "0.01", ",", "1.0"}], "}"}], ",", 
+    "\[IndentingNewLine]", 
+    RowBox[{
+    "PlotLabel", "->", 
+     "\"\<BSA Surrogate DNN Foliataion Across \[Phi] and \
+\!\(\*SubscriptBox[\(x\), \(B\)]\)\>\""}], ",", "\[IndentingNewLine]", 
+    RowBox[{"AxesLabel", "->", 
+     RowBox[{"{", 
+      RowBox[{
+      "\"\<\[Phi] (radians)\>\"", ",", 
+       "\"\<\!\(\*SubscriptBox[\(x\), \(B\)]\)\>\"", ",", 
+       "\"\<DNN Evaluation\>\""}], "}"}]}]}], "]"}]}]], "Input",
+ CellChangeTimes->{{3.990093941337159*^9, 3.9900939783808804`*^9}},
+ CellLabel->"In[73]:=",ExpressionUUID->"c02f460a-727c-405a-92fe-92f346d07aee"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[TextData[{
+ "(#1.B.3): Untrained model surface across ",
+ Cell[BoxData[
+  FormBox[
+   SuperscriptBox["Q", "2"], TraditionalForm]],
+  FormatType->TraditionalForm,ExpressionUUID->
+  "93812825-047a-4e80-a3df-66a6ddabd87c"],
+ " and \[Phi]:"
+}], "Subsection",
+ CellChangeTimes->{{3.990094009273301*^9, 
+  3.9900940136412487`*^9}},ExpressionUUID->"20c84ae5-7c46-413c-832d-\
+81b837833d46"],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"(*", " ", 
+   RowBox[{"Fixing", " ", "t", " ", "and", " ", 
+    SubscriptBox["x", "B"], " ", 
+    RowBox[{"here", "!"}]}], " ", "*)"}], "\[IndentingNewLine]", 
+  RowBox[{"Plot3D", "[", "\[IndentingNewLine]", 
+   RowBox[{
+    RowBox[{"BSASurrogateDNNModel", "[", 
+     RowBox[{
+      RowBox[{"-", "0.5"}], ",", "0.3", ",", "qsq", ",", "\[Phi]"}], "]"}], 
+    ",", 
+    RowBox[{"{", 
+     RowBox[{"\[Phi]", ",", "0", ",", 
+      RowBox[{"2", "\[Pi]"}]}], "}"}], ",", 
+    RowBox[{"{", 
+     RowBox[{"qsq", ",", "1.0", ",", "7.0"}], "}"}], ",", 
+    "\[IndentingNewLine]", 
+    RowBox[{
+    "PlotLabel", "->", 
+     "\"\<BSA Surrogate DNN Foliataion Across \[Phi] and \
+\!\(\*SubscriptBox[\(x\), \(B\)]\)\>\""}], ",", "\[IndentingNewLine]", 
+    RowBox[{"AxesLabel", "->", 
+     RowBox[{"{", 
+      RowBox[{
+      "\"\<\[Phi] (radians)\>\"", ",", 
+       "\"\<\!\(\*SuperscriptBox[\(Q\), \(2\)]\) \
+(\!\(\*SuperscriptBox[\(GeV\), \(2\)]\))\>\"", ",", 
+       "\"\<DNN Evaluation\>\""}], "}"}]}]}], "]"}]}]], "Input",
+ CellChangeTimes->{{3.9900944017618723`*^9, 3.990094422679463*^9}},
+ CellLabel->"In[74]:=",ExpressionUUID->"86fb6bb4-dc82-49c7-941a-aaf25db17690"]
+}, Open  ]]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["(#Z): Figuring Stuff Out:", "Chapter",
+ CellChangeTimes->{{3.990091266912066*^9, 
+  3.990091273239996*^9}},ExpressionUUID->"39bd7180-c089-4505-a730-\
+431dd1a7f22b"],
+
+Cell[CellGroupData[{
+
+Cell["(#Z.1): How do you randomly sample from a distribution?", "Section",
+ CellChangeTimes->{{3.99009127447447*^9, 
+  3.9900912828629637`*^9}},ExpressionUUID->"9b84085b-5779-43cc-80b2-\
+703b9f0a41b3"],
+
+Cell[CellGroupData[{
+
+Cell["(#Z.1.1): Sampling from a Normal Distribution:", "Subsection",
+ CellChangeTimes->{{3.990091301138138*^9, 
+  3.990091310161125*^9}},ExpressionUUID->"e4aacc18-a17c-4348-8dc1-\
+eaaffc46a585"],
+
+Cell[BoxData[
+ RowBox[{"RandomVariate", "[", 
+  RowBox[{
+   RowBox[{"NormalDistribution", "[", 
+    RowBox[{"0", ",", "1"}], "]"}], ",", 
+   RowBox[{"{", 
+    RowBox[{"3", ",", "3"}], "}"}]}], "]"}]], "Input",ExpressionUUID->\
+"dd872835-a3c3-4fe3-9270-308e45c68e37"]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["(#Z.2): Mathematica Neural Networks?", "Section",
+ CellChangeTimes->{{3.990093596458702*^9, 
+  3.9900936034808407`*^9}},ExpressionUUID->"0b1c3cea-7ce6-47a3-9922-\
+ce83cec465ae"],
+
+Cell[CellGroupData[{
+
+Cell["(#Z.1.2): Make a simple Linear DNN:", "Subsection",
+ CellChangeTimes->{{3.990093605775032*^9, 3.990093618749261*^9}, {
+  3.9900937283542233`*^9, 3.990093730749775*^9}, {3.990094586604373*^9, 
+  3.990094587221835*^9}},ExpressionUUID->"0b5c3547-07db-430c-832e-\
+73a58ef41d6f"],
+
+Cell[CellGroupData[{
+
+Cell["(#Z.1.2.1): Define the DNN:", "Subsubsection",
+ CellChangeTimes->{{3.990094599504286*^9, 
+  3.990094604880093*^9}},ExpressionUUID->"61761705-7193-4e32-909b-\
+645c6c368174"],
+
+Cell[BoxData[
+ RowBox[{"simpleDNN", "=", 
+  RowBox[{"NetChain", "[", 
+   RowBox[{"{", 
+    RowBox[{"LinearLayer", "[", 
+     RowBox[{"3", ",", 
+      RowBox[{"\"\<Input\>\"", "->", "3"}]}], "]"}], "}"}], "]"}]}]], "Input",\
+
+ CellChangeTimes->{{3.9900945927989187`*^9, 3.990094593828043*^9}},
+ CellLabel->"In[82]:=",ExpressionUUID->"68539794-ed92-44b2-9977-dcb901c3c1ee"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["(#Z.1.2.2): Initialize the DNN:", "Subsubsection",
+ CellChangeTimes->{{3.9900937369085093`*^9, 3.990093743516254*^9}, {
+  3.9900945888417683`*^9, 
+  3.990094596722755*^9}},ExpressionUUID->"ef14c150-febc-4445-a5bb-\
+e1a56b28d188"],
+
+Cell[BoxData[
+ RowBox[{"initializedSimpleDNN", "=", 
+  RowBox[{"NetInitialize", "[", "simpleDNN", "]"}]}]], "Input",
+ CellChangeTimes->{{3.990093620745213*^9, 3.9900936268792963`*^9}, {
+  3.990093720776392*^9, 3.9900937256554947`*^9}, {3.990093806501295*^9, 
+  3.990093828601162*^9}, {3.990094562879451*^9, 3.990094608447103*^9}, {
+  3.9901015124571733`*^9, 3.990101512737068*^9}},
+ CellLabel->"In[83]:=",ExpressionUUID->"b24e49e7-aa54-49b3-9a12-d78d3f13c7cf"],
+
+Cell["You have to do this NetInitialize thing...", "Text",
+ CellChangeTimes->{{3.990093836282895*^9, 
+  3.990093842460764*^9}},ExpressionUUID->"ae720b00-7132-480d-a8f3-\
+53c5df6fd30f"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["(#Z.1.2.3): Evaluate the DNN:", "Subsubsection",
+ CellChangeTimes->{{3.99009374559052*^9, 3.990093751836651*^9}, {
+  3.9900945903849583`*^9, 
+  3.990094590437859*^9}},ExpressionUUID->"d0153a77-fe20-46c9-8426-\
+f5da116b037f"],
+
+Cell[BoxData[
+ RowBox[{"simpleDNN", "[", 
+  RowBox[{"{", 
+   RowBox[{"1", ",", "2", ",", "3"}], "}"}], "]"}]], "Input",
+ CellChangeTimes->{{3.990093753214656*^9, 3.990093757794873*^9}, {
+   3.990093812984745*^9, 3.990093813546173*^9}, 3.990101515933094*^9},
+ CellLabel->"In[84]:=",ExpressionUUID->"fcc5fb41-fb9f-4927-aa55-12b4e4ce4428"],
+
+Cell["That\[CloseCurlyQuote]s making sense to me, yes.", "Text",
+ CellChangeTimes->{{3.990093846981742*^9, 
+  3.990093850473527*^9}},ExpressionUUID->"c480f08d-6556-40bf-904e-\
+0031e89576a9"]
+}, Open  ]]
+}, Open  ]]
+}, Open  ]]
+}, Open  ]]
+}, Open  ]]
+},
+WindowSize->{1867.5, 1032},
+WindowMargins->{{Automatic, 0}, {Automatic, 0}},
+FrontEndVersion->"13.3 for Linux x86 (64-bit) (July 24, 2023)",
+StyleDefinitions->"Default.nb",
+ExpressionUUID->"a6c00e8f-6ab9-424a-8f5c-5b82e181c6f8"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[CellGroupData[{
+Cell[580, 22, 215, 4, 98, "Title",ExpressionUUID->"37c9a9e0-d64d-4907-ab53-a8e654d0eb46"],
+Cell[CellGroupData[{
+Cell[820, 30, 220, 4, 69, "Chapter",ExpressionUUID->"1f30cb68-9094-49ed-ae04-28c6ac9dd904"],
+Cell[CellGroupData[{
+Cell[1065, 38, 234, 4, 67, "Section",ExpressionUUID->"48f8ab27-86bb-4754-9b1a-46b31ced98cb"],
+Cell[1302, 44, 1027, 24, 176, "Input",ExpressionUUID->"6ec41f3f-c482-4112-bc76-23fb5729746d",
+ InitializationCell->True],
+Cell[2332, 70, 273, 5, 29, "Input",ExpressionUUID->"3fa9a20d-b3dd-4d23-b10c-c83a4bcb3aae"]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[2654, 81, 197, 3, 69, "Chapter",ExpressionUUID->"1dea27fa-5372-4d1f-8cb5-18a715fdb301"],
+Cell[CellGroupData[{
+Cell[2876, 88, 237, 4, 67, "Section",ExpressionUUID->"400620c8-2efe-4eae-b53e-cd10bc912945"],
+Cell[3116, 94, 772, 20, 81, "Text",ExpressionUUID->"f1565a52-b2c1-49a7-8065-8c998a340ce9"],
+Cell[3891, 116, 2105, 43, 344, "Input",ExpressionUUID->"8a22c379-57bc-481a-b816-dfbd420845b2"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[6033, 164, 622, 20, 67, "Section",ExpressionUUID->"e29b9183-9f8d-436b-b179-45b7c97732e0"],
+Cell[6658, 186, 392, 7, 31, "Input",ExpressionUUID->"14dd14d7-69af-4d87-a92e-4d60dc1ef008"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[7087, 198, 178, 3, 67, "Section",ExpressionUUID->"9708cd69-4239-40de-b83a-79e9573a9170"],
+Cell[7268, 203, 168, 3, 35, "Text",ExpressionUUID->"6126e31b-855b-4aeb-b433-72cc39d9e854"],
+Cell[7439, 208, 452, 9, 29, "Input",ExpressionUUID->"2742412e-4e87-4475-addc-92780b27fd4d"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[7928, 222, 277, 4, 67, "Section",ExpressionUUID->"12bf6af7-0101-409c-8d31-bd5f349e2749"],
+Cell[8208, 228, 339, 8, 35, "Text",ExpressionUUID->"cca6a2b0-3b46-4330-b4a0-a83d00aff74b"],
+Cell[8550, 238, 469, 12, 31, "Input",ExpressionUUID->"3fb91393-e58d-485b-b332-df14f0d32431"],
+Cell[CellGroupData[{
+Cell[9044, 254, 204, 3, 54, "Subsection",ExpressionUUID->"8be8153e-c008-4d5e-9e8a-76371e8367b1"],
+Cell[9251, 259, 1258, 31, 116, "Input",ExpressionUUID->"4886c454-9178-4045-afa3-cdaa3cd3fe35"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[10546, 295, 377, 10, 54, "Subsection",ExpressionUUID->"91eb4d32-e7aa-467b-aa90-7638baa96ca9"],
+Cell[10926, 307, 1151, 29, 116, "Input",ExpressionUUID->"c02f460a-727c-405a-92fe-92f346d07aee"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[12114, 341, 387, 11, 54, "Subsection",ExpressionUUID->"20c84ae5-7c46-413c-832d-81b837833d46"],
+Cell[12504, 354, 1195, 30, 116, "Input",ExpressionUUID->"86fb6bb4-dc82-49c7-941a-aaf25db17690"]
+}, Open  ]]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[13760, 391, 170, 3, 69, "Chapter",ExpressionUUID->"39bd7180-c089-4505-a730-431dd1a7f22b"],
+Cell[CellGroupData[{
+Cell[13955, 398, 201, 3, 67, "Section",ExpressionUUID->"9b84085b-5779-43cc-80b2-703b9f0a41b3"],
+Cell[CellGroupData[{
+Cell[14181, 405, 194, 3, 54, "Subsection",ExpressionUUID->"e4aacc18-a17c-4348-8dc1-eaaffc46a585"],
+Cell[14378, 410, 266, 7, 29, "Input",ExpressionUUID->"dd872835-a3c3-4fe3-9270-308e45c68e37"]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[14693, 423, 183, 3, 67, "Section",ExpressionUUID->"0b1c3cea-7ce6-47a3-9922-ce83cec465ae"],
+Cell[CellGroupData[{
+Cell[14901, 430, 280, 4, 54, "Subsection",ExpressionUUID->"0b5c3547-07db-430c-832e-73a58ef41d6f"],
+Cell[CellGroupData[{
+Cell[15206, 438, 178, 3, 45, "Subsubsection",ExpressionUUID->"61761705-7193-4e32-909b-645c6c368174"],
+Cell[15387, 443, 371, 9, 29, "Input",ExpressionUUID->"68539794-ed92-44b2-9977-dcb901c3c1ee"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[15795, 457, 235, 4, 45, "Subsubsection",ExpressionUUID->"ef14c150-febc-4445-a5bb-e1a56b28d188"],
+Cell[16033, 463, 460, 7, 29, "Input",ExpressionUUID->"b24e49e7-aa54-49b3-9a12-d78d3f13c7cf"],
+Cell[16496, 472, 184, 3, 35, "Text",ExpressionUUID->"ae720b00-7132-480d-a8f3-53c5df6fd30f"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[16717, 480, 230, 4, 45, "Subsubsection",ExpressionUUID->"d0153a77-fe20-46c9-8426-f5da116b037f"],
+Cell[16950, 486, 336, 6, 29, "Input",ExpressionUUID->"fcc5fb41-fb9f-4927-aa55-12b4e4ce4428"],
+Cell[17289, 494, 190, 3, 35, "Text",ExpressionUUID->"c480f08d-6556-40bf-904e-0031e89576a9"]
+}, Open  ]]
+}, Open  ]]
+}, Open  ]]
+}, Open  ]]
+}, Open  ]]
+}
+]
+*)
+
