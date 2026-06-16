@@ -2,7 +2,7 @@
 # FILE INFORMATION:
 # Purpose: makes plots of individual replica learning curves
 # Created: 20260602
-# Last changed: 20260602
+# Last changed: 20260603
 #################################################################################
 
 print("[INFO]: Script began running!")
@@ -53,14 +53,18 @@ MAJOR_MINOR_NUMBER = f"{VERSION_NUMBER}_{MINOR_NUMBER}"
 print(f"[INFO]: We are saving figures and data with the following appendage: {MAJOR_MINOR_NUMBER}")
 
 #################################################################################
-# Begin iteration over valid sets:
+# Collect all of the DNN replica data:
 #################################################################################
 
 csv_files = sorted(
-    glob.glob(f"./data/version_{MAJOR_MINOR_NUMBER}/data/replica_*_history.csv")
+    glob.glob(f"./hpc/version_{MAJOR_MINOR_NUMBER}/data/replica_*_history.csv")
     )
 
 print(f"[INFO]: Glob collected {len(csv_files)} files!")
+
+#################################################################################
+# Begin iteration over valid sets:
+#################################################################################
 
 for csv_file in csv_files:
     file_path = Path(csv_file)
@@ -79,8 +83,14 @@ for csv_file in csv_files:
     # below should usually work...
     number_of_epochs_run = len(df)
 
-    # only one column here:
-    testing_loss = pd.read_csv(f"./data/version_{MAJOR_MINOR_NUMBER}/data/replica_{replica_number}_test_metrics.csv")['loss'].iloc[0]
+    # load this annoying dataframe:
+    testing_loss_dataframe = pd.read_csv(f"./hpc/version_{MAJOR_MINOR_NUMBER}/data/replica_{replica_number}_test_metrics.csv")
+    # then read its single column...:   
+    testing_loss = testing_loss_dataframe['loss'].iloc[0]
+
+#################################################################################
+# Making the loss vs. epoch plot:
+#################################################################################
 
     curves_figure, curves_axis = plt.subplots(1, figsize = (8, 8))
 
@@ -109,7 +119,7 @@ for csv_file in csv_files:
 
     for extension in ['png', 'eps']:
         curves_figure.savefig(
-            f"./data/version_{MAJOR_MINOR_NUMBER}/learning_curves/lc_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.{extension}",
+            f"./hpc/version_{MAJOR_MINOR_NUMBER}/learning_curves/lc_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.{extension}",
             facecolor = 'white',
             transparent = False)
 
@@ -117,6 +127,10 @@ for csv_file in csv_files:
 
     del curves_figure
     del curves_axis
+
+#################################################################################
+# Making the log(loss) plots:
+#################################################################################
 
     log_curves_figure, log_curves_axis = plt.subplots(1, figsize = (8, 8))
 
@@ -145,7 +159,7 @@ for csv_file in csv_files:
 
     for extension in ['png', 'eps']:
         log_curves_figure.savefig(
-            f"./data/version_{MAJOR_MINOR_NUMBER}/learning_curves/log_lc_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.{extension}",
+            f"./hpc/version_{MAJOR_MINOR_NUMBER}/learning_curves/log_lc_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.{extension}",
             facecolor = 'white',
             transparent = False)
 
@@ -155,5 +169,9 @@ for csv_file in csv_files:
     del log_curves_axis
 
     del df
+
+#################################################################################
+# Script finishes:
+#################################################################################
 
 print("[INFO]: Processing complete!")
