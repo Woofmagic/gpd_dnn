@@ -10,10 +10,10 @@
 NotebookFileLineBreakTest
 NotebookFileLineBreakTest
 NotebookDataPosition[       158,          7]
-NotebookDataLength[     55394,       1461]
+NotebookDataLength[     55386,       1461]
 NotebookOptionsPosition[     45791,       1279]
-NotebookOutlinePosition[     46193,       1295]
-CellTagsIndexPosition[     46150,       1292]
+NotebookOutlinePosition[     46183,       1295]
+CellTagsIndexPosition[     46140,       1292]
 WindowFrame->Normal*)
 
 (* Beginning of Notebook Content *)
@@ -1277,8 +1277,8 @@ Cell["That\[CloseCurlyQuote]s making sense to me, yes.", "Text",
 }, Open  ]]
 }, Open  ]]
 },
-WindowSize->{1400.25, 766.5},
-WindowMargins->{{Automatic, 99.75}, {57.75, Automatic}},
+WindowSize->{933.75, 1032},
+WindowMargins->{{Automatic, 0}, {Automatic, 0}},
 FrontEndVersion->"13.3 for Linux x86 (64-bit) (July 24, 2023)",
 StyleDefinitions->"Default.nb",
 ExpressionUUID->"a6c00e8f-6ab9-424a-8f5c-5b82e181c6f8"
@@ -1295,12 +1295,12 @@ CellTagsIndex->{}
 (*NotebookFileOutline
 Notebook[{
 Cell[CellGroupData[{
-Cell[580, 22, 215, 4, 98, "Title",ExpressionUUID->"37c9a9e0-d64d-4907-ab53-a8e654d0eb46"],
+Cell[580, 22, 215, 4, 160, "Title",ExpressionUUID->"37c9a9e0-d64d-4907-ab53-a8e654d0eb46"],
 Cell[CellGroupData[{
 Cell[820, 30, 220, 4, 69, "Chapter",ExpressionUUID->"1f30cb68-9094-49ed-ae04-28c6ac9dd904"],
 Cell[CellGroupData[{
 Cell[1065, 38, 234, 4, 67, "Section",ExpressionUUID->"48f8ab27-86bb-4754-9b1a-46b31ced98cb"],
-Cell[1302, 44, 1026, 24, 176, "Input",ExpressionUUID->"6ec41f3f-c482-4112-bc76-23fb5729746d",
+Cell[1302, 44, 1026, 24, 196, "Input",ExpressionUUID->"6ec41f3f-c482-4112-bc76-23fb5729746d",
  InitializationCell->True],
 Cell[2331, 70, 272, 5, 29, "Input",ExpressionUUID->"3fa9a20d-b3dd-4d23-b10c-c83a4bcb3aae"]
 }, Open  ]]
@@ -1313,7 +1313,7 @@ Cell[3114, 94, 772, 20, 81, "Text",ExpressionUUID->"f1565a52-b2c1-49a7-8065-8c99
 Cell[3889, 116, 2154, 44, 344, "Input",ExpressionUUID->"8a22c379-57bc-481a-b816-dfbd420845b2"]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[6080, 165, 622, 20, 67, "Section",ExpressionUUID->"e29b9183-9f8d-436b-b179-45b7c97732e0"],
+Cell[6080, 165, 622, 20, 105, "Section",ExpressionUUID->"e29b9183-9f8d-436b-b179-45b7c97732e0"],
 Cell[6705, 187, 391, 7, 31, "Input",ExpressionUUID->"14dd14d7-69af-4d87-a92e-4d60dc1ef008"]
 }, Open  ]],
 Cell[CellGroupData[{
