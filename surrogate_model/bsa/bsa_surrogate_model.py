@@ -1,8 +1,8 @@
 #################################################################################
 # FILE INFORMATION:
-# Purpose: produce a replica DNN model mapping kinematics to observables.
+# Purpose: produce a replica DNN model mapping kinematics to BSA data.
 # Created: 20260505
-# Last changed: 20260528
+# Last changed: 20260701
 #################################################################################
 
 print("[INFO]: Script began running!")
@@ -14,10 +14,15 @@ print("[INFO]: Script began running!")
 import gc
 import json
 import sys
+from pathlib import Path
 
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import tensorflow as tf
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score
 
 #################################################################################
 # HPC logic:
@@ -29,15 +34,15 @@ replica_number = int(sys.argv[1])
 # In case you want to reproduce things --- but this isn't necessary!
 #################################################################################
 
-# np.random.seed(replica_number)
-# tf.random.set_seed(replica_number)
+np.random.seed(replica_number)
+tf.random.set_seed(replica_number)
 
 #################################################################################
 # Scratch path
 #################################################################################
 
 # verify this is what you want
-SCRATCH_PATH = 'placeholder!'
+SCRATCH_PATH = Path('placeholder!')
 
 #################################################################################
 # Version numbers!
@@ -54,242 +59,364 @@ MAJOR_MINOR_NUMBER = f"{VERSION_NUMBER}_{MINOR_NUMBER}"
 USING_GAUSSIAN_ERROR_SAMPLING = True
 
 BASE_LEARNING_RATE = 3e-4
-_NUMBER_OF_EPOCHS = 1000
-_BATCH_SIZE = 8
+BASE_WEIGHT_DECAY_RATE = 1e-7
+_NUMBER_OF_EPOCHS = 3000
+
+# sampling true points with error distribution
+USING_GAUSSIAN_ERROR_SAMPLING = False
+
+# train/validation/test split:
+_DNN_TESTING_TEMPORARY_SPLIT_PERCENTAGE = 0.1 # 90% temporary, 10% testing
+_DNN_TRAINING_VALIDATION_SPLIT_PERCENTAGE = 0.1 # of the above 90% temporary, 90% training, 10% validation
 
 #################################################################################
-# Loading the data!
+# Reading the pseudodata file:
 #################################################################################
 
-dnn_replica_data = pd.read_csv(
-    filepath_or_buffer = f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/dnn_data_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.csv"
+# this reads the pseudodata!
+pseudodata_dataframe = pd.read_csv(
+    filepath_or_buffer =
+        SCRATCH_PATH /
+        f"version_{MAJOR_MINOR_NUMBER}" /
+        "data" /
+        f"refined_bsa_data_v{MAJOR_MINOR_NUMBER}.csv"
 )
 
+# saves a copy of the column:
+pseudodata_dataframe['original_bsa'] = pseudodata_dataframe['unp_target_bsa']
+
+if USING_GAUSSIAN_ERROR_SAMPLING:
+
+    pseudodata_dataframe['unp_target_bsa'] = np.random.normal(
+        loc = pseudodata_dataframe['original_bsa'],
+        scale = pseudodata_dataframe['unp_target_bsa']
+    )
+
+# phi -> v(phi)
+pseudodata_dataframe["v"] = np.sin(pseudodata_dataframe["phi"])
+
 # we will use this to make predictions across the *entire* dataset!
-x_data = dnn_replica_data[["t", "x_b", "q_squared", "phi"]]
-y_data = dnn_replica_data["unp_target_bsa"]
+x_data = pseudodata_dataframe[["k", "t", "x_b", "q_squared", "v"]]
+# [NOTE]: we do NOT LOG THE BSA DATA!
+y_data = pseudodata_dataframe[["unp_target_bsa"]]
+
+TOTAL_DATA_SIZE = len(x_data)
+print(f"[INFO]: Total data size is: {TOTAL_DATA_SIZE}")
+
+x_scaler = StandardScaler()
+y_scaler = StandardScaler()
+
+preprocessed_x_data = x_scaler.fit_transform(x_data)
+preprocessed_y_data = y_scaler.fit_transform(y_data)
+
+indices = np.arange(len(pseudodata_dataframe))
+
+# testing/temporary split:
+remaining_indices, testing_indices = train_test_split(
+    indices,
+    test_size = _DNN_TESTING_TEMPORARY_SPLIT_PERCENTAGE, shuffle = True, random_state = 31415)
+
+# training/validation split:
+training_indices, validation_indices = train_test_split(
+    remaining_indices,
+    test_size = _DNN_TRAINING_VALIDATION_SPLIT_PERCENTAGE, shuffle = True, random_state = 31415)
+
+x_training = preprocessed_x_data[training_indices]
+y_training = preprocessed_y_data[training_indices]
+
+x_validation = preprocessed_x_data[validation_indices]
+y_validation = preprocessed_y_data[validation_indices]
+
+x_testing = preprocessed_x_data[testing_indices]
+y_testing = preprocessed_y_data[testing_indices]
+
+print(f"[INFO]: Total number of training points: {len(x_training)}")
+print(f"[INFO]: Total number of validaion points: {len(x_validation)}")
+print(f"[INFO]: Total number of testing points: {len(x_testing)}")
 
 #################################################################################
-# Partitioning the data into its train/val/test flags:
+# Label the dataframe with training/validation/testing split:
 #################################################################################
 
-training_df = dnn_replica_data[dnn_replica_data["split"] == "train"]
-validation_df = dnn_replica_data[dnn_replica_data["split"] == "validation"]
-testing_df = dnn_replica_data[dnn_replica_data["split"] == "test"]
+# augment rows with train/test/val
+pseudodata_dataframe["split"] = ""
 
-number_of_dnn_training_points = len(training_df)
-number_of_dnn_validation_points = len(validation_df)
-number_of_dnn_testing_points = len(testing_df)
+pseudodata_dataframe.loc[training_indices, "split"] = "train"
+pseudodata_dataframe.loc[validation_indices, "split"] = "validation"
+pseudodata_dataframe.loc[testing_indices, "split"] = "test"
 
-x_training = training_df[["t", "x_b", "q_squared", "phi"]]
-y_training = training_df[["unp_target_bsa"]]
+pseudodata_dataframe.to_csv(
+    path_or_buf =
+        SCRATCH_PATH /
+        f"version_{MAJOR_MINOR_NUMBER}" /
+        "data" /
+        f"dnn_data_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.csv",
+    index = False
+)
 
-x_validation = validation_df[["t", "x_b", "q_squared", "phi"]]
-y_validation = validation_df[["unp_target_bsa"]]
+print("[INFO]: Save the pseudodata dataframe!")
 
-x_testing = testing_df[["t", "x_b", "q_squared", "phi"]]
-y_testing = testing_df[["unp_target_bsa"]]
+#################################################################################
+# Useful functions for plotting
+#################################################################################
 
-if number_of_dnn_training_points <= _BATCH_SIZE:
-    print(f"[WARN]: Number of training points is less than or equal to the batch size. Setting batch size equal to {number_of_dnn_training_points}.")
-    _BATCH_SIZE = number_of_dnn_training_points
+def plot_learning_curve(
+    replica_number, history, validation_loss, output_directory):
+
+    figure, axis = plt.subplots(figsize = (8, 8))
+
+    axis.plot(history.history["loss"], label = "Training Loss")
+    axis.plot(history.history["val_loss"], label = "Validation Loss")
+
+    axis.set_xlabel("Epoch")
+    axis.set_ylabel("Loss")
+
+    axis.set_title(f"Cross-Section Surrogate\nValidation Loss = {validation_loss:.6e}")
+
+    axis.legend()
+
+    figure.tight_layout()
+
+    for extension in ['png', 'eps']:
+        figure.savefig(
+            output_directory /
+            f"version_{MAJOR_MINOR_NUMBER}" /
+            "learning_curves" /
+            f"cross_section_surrogate_lc_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.{extension}"
+        )
+
+    plt.close(figure)
+
+def plot_log_learning_curve(
+    replica_number, history, validation_loss, output_directory):
+
+    figure, axis = plt.subplots(figsize = (8, 8))
+
+    axis.plot(history.history["loss"], label = "Training Loss")
+    axis.plot(history.history["val_loss"], label = "Validation Loss")   
+
+    axis.set_yscale("log")
+
+    axis.set_xlabel("Epoch")
+    axis.set_ylabel("Loss")
+
+    axis.set_title(f"Cross-Section Surrogate\nValidation Loss = {validation_loss:.6e}")
+
+    axis.legend()
+
+    figure.tight_layout()
+
+    for extension in ['png', 'eps']:
+        figure.savefig(
+            output_directory / 
+            f"version_{MAJOR_MINOR_NUMBER}" /
+            "learning_curves" /
+            f"cross_section_surrogate_log_lc_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.{extension}"
+        )
+
+    plt.close(figure)
+
+def plot_prediction_vs_truth(truth, prediction, output_path):
+
+    r_squared = r2_score(truth, prediction)
+
+    fig, ax = plt.subplots(figsize = (9, 9))
+
+    ax.scatter(truth, prediction, s = 4.0, alpha = 0.6, color = "blue")
+
+    minimum = min(np.min(truth), np.min(prediction))
+    maximum = max(np.max(truth), np.max(prediction))
+
+    ax.plot(
+        [minimum, maximum], [minimum, maximum],
+        color = "red", label = "Perfect Fit"
+    )
+
+    ax.set_xlabel("BSA Data")
+    ax.set_ylabel("DNN Prediction")
+    ax.set_title(f"Replica {replica_number} Performance\nR^2 = {r_squared:.5f}")
+
+    ax.legend()
+    fig.tight_layout()
+
+    for extension in ("png", "eps"):
+        fig.savefig(output_path.with_suffix(f".{extension}"))
+
+    plt.close(fig)
+
+    return r_squared
 
 #################################################################################
 # TensorFlow model!
 #################################################################################
 
-def cff_h_model():
-    # initializer:
-    initializer = tf.keras.initializers.GlorotNormal(seed = None)
+class BSASurrogateModel(tf.keras.Model):
 
-    # input layer:
-    model_inputs = tf.keras.Input(shape = (4,), name = "input_values")
+    def __init__(self):
+        super().__init__()
 
-    # hidden layers:
-    hidden = tf.keras.layers.Dense(
-        64, kernel_initializer = initializer, activation = "tanh")(model_inputs)
-    hidden = tf.keras.layers.Dense(
-        64, kernel_initializer = initializer, activation = "tanh")(hidden)
-    hidden = tf.keras.layers.Dense(
-        64, kernel_initializer = initializer, activation = "tanh")(hidden)
+        self.hidden_layers = [
+            tf.keras.layers.Dense(
+                128, activation = "silu", kernel_initializer = "glorot_normal"
+            )
+            for _ in range(4)
+        ]
 
-    # output layer:
-    model_output = tf.keras.layers.Dense(1, activation = "linear")(hidden)
+        # linear activation is default activation if `activation` key is not specified: https://www.tensorflow.org/api_docs/python/tf/keras/layers/Dense
+        self.bsa_output = tf.keras.layers.Dense(1)
 
-    model = tf.keras.Model(inputs = model_inputs, outputs = model_output)
+    def call(self, x):
 
-    model.compile(
-        optimizer = tf.keras.optimizers.Adam(learning_rate = BASE_LEARNING_RATE),
-        loss = tf.keras.losses.MeanSquaredError())
-
-    return model
+        # nothing fancy here!
+        for layer in self.hidden_layers:
+            x = layer(x)
+        
+        return self.bsa_output(x)
 
 #################################################################################
 # Training!
 #################################################################################
 
+_BATCH_SIZE = len(x_training)
+
 tf.keras.backend.clear_session()
 gc.collect()
 
-dnn_model = cff_h_model()
+dnn_model = BSASurrogateModel()
+
+dnn_model.compile(
+    # LR is alpha in ADAM, which is stepsize:
+    optimizer = tf.keras.optimizers.AdamW(
+        learning_rate = BASE_LEARNING_RATE,
+        weight_decay = BASE_WEIGHT_DECAY_RATE),
+    loss = "mse",
+    metrics = ["mae"])
 
 dnn_model_history = dnn_model.fit(
     x_training, y_training,
     validation_data = (x_validation, y_validation),
     epochs = _NUMBER_OF_EPOCHS,
-    # [NOTE]: BATCHSIZE really matters!
     batch_size = _BATCH_SIZE,
-    callbacks = [
-        tf.keras.callbacks.ReduceLROnPlateau(
-            monitor = "val_loss", factor = 0.5, patience = 50, min_lr = 1e-6,
-            verbose = 0),
-    ],
     verbose = 0)
 
-dnn_model.save(f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/replicas/replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.keras")
+dnn_model.save(
+    SCRATCH_PATH /
+    f"version_{MAJOR_MINOR_NUMBER}" / 
+    "replicas" / 
+    f"replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.keras"
+)
 
 #################################################################################
 # Post-train evaluation and analysis and metadata collection:
 #################################################################################
 
+# just get the number of epochs:
 number_of_epochs_run = len(dnn_model_history.epoch)
 print(f"[INFO]: The model ran for {number_of_epochs_run} epochs before early stopping.")
 
+# cast training history into dataframe and csv:
 history_df = pd.DataFrame(dnn_model_history.history)
 history_df['epoch'] = range(1, len(history_df) + 1)
-history_df.to_csv(f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/replica_{replica_number}_history.csv", index = False)
-
-dnn_evaluation_statistics = dnn_model.evaluate(x_testing, y_testing, verbose = 0, return_dict = True)
-print(f"[INFO]: Test Loss for Replica {replica_number}: {dnn_evaluation_statistics}")
-
-pd.DataFrame(
-    # https://stackoverflow.com/a/17840195 -> for why we need to cast it into a list!
-    [dnn_evaluation_statistics]).to_csv(
-    f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/replica_{replica_number}_test_metrics.csv", 
+history_df.to_csv(
+    SCRATCH_PATH /
+    f"version_{MAJOR_MINOR_NUMBER}" / 
+    "data" / 
+    f"replica_{replica_number}_history.csv", 
     index = False)
 
-y_predictions = dnn_model.predict(x_data)
+# evaluation:
+evaluation_metrics = dnn_model.evaluate(x_validation, y_validation, verbose = 0)
+print(f"[INFO]: Evaluation metrics: {evaluation_metrics}")
 
-prediction_results = x_data.copy()
+metrics_dictionary = dict(zip(dnn_model.metrics_names, evaluation_metrics))
+validation_loss = metrics_dictionary["loss"]
+print(f"[INFO]: Validation loss = {validation_loss}")
 
-#################################################################################
-# Preserve split labels
-#################################################################################
-
-prediction_results['split'] = dnn_replica_data['split'].values
-
-#################################################################################
-# Original experimental data:
-#################################################################################
-
-prediction_results['original_bsa'] = dnn_replica_data['original_bsa'].values
-
-#################################################################################
-# Experimental uncertainty:
-#################################################################################
-
-prediction_results['bsa_err'] = dnn_replica_data['unp_target_bsa_err'].values
-
-#################################################################################
-# Replica values:
-#################################################################################
-
-prediction_results['replica_bsa'] = dnn_replica_data['unp_target_bsa'].values
-
-#################################################################################
-# DNN predictions:
-#################################################################################
-
-prediction_results['pred_bsa'] = y_predictions[:, 0]
-
-#################################################################################
-# Metadata
-#################################################################################
-
-prediction_results['replica_number'] = replica_number
-
-prediction_results.to_csv(
-    f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/replica_{replica_number}_test_predictions.csv",
-    index = False)
-
-#################################################################################
-# Smooth replica surface across t, xb, q_squared, and phi:
-#################################################################################
-
-print("[INFO]: Computing smooth phi predictions...")
-
-t_min = x_data['t'].min()
-t_max = x_data['t'].max()
-
-print(f"[INFO]: bounding for t: {t_min} < t < {t_max}")
-
-xb_min = x_data['x_b'].min()
-xb_max = x_data['x_b'].max()
-
-print(f"[INFO]: bounding for xb: {xb_min} < x_b < {xb_max}")
-
-q2_min = x_data['q_squared'].min()
-q2_max = x_data['q_squared'].max()
-
-print(f"[INFO]: bounding for Q^2: {q2_min} < Q^2 < {q2_max}")
-
-NUMBER_OF_T = 10
-NUMBER_OF_XB = 10
-NUMBER_OF_Q2 = 10
-NUMBER_OF_PHI = 361
-
-t_grid = np.round(np.linspace(t_min, t_max, NUMBER_OF_T), 3)
-xb_grid = np.round(np.linspace(xb_min, xb_max, NUMBER_OF_XB), 4)
-q2_grid = np.round(np.linspace(q2_min, q2_max, NUMBER_OF_Q2), 3)
-phi_grid = np.linspace(-np.pi, np.pi, NUMBER_OF_PHI)
-
-mesh = np.meshgrid(t_grid, xb_grid, q2_grid, phi_grid, indexing = 'ij')
-
-t_flat = mesh[0].ravel()
-xb_flat = mesh[1].ravel()
-q2_flat = mesh[2].ravel()
-phi_flat = mesh[3].ravel()
-
-smooth_input = pd.DataFrame({
-    't': t_flat,
-    'x_b': xb_flat,
-    'q_squared': q2_flat,
-    'phi': phi_flat
-})
-
-smooth_predictions = dnn_model.predict(smooth_input, verbose = 0)
-
-# making predictions
-smooth_input['pred_bsa'] = smooth_predictions[:, 0]
-
-smooth_input.to_csv(
-    f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/"
-    f"replica_{replica_number}_smooth_predictions.csv",
-    index = False
+plot_learning_curve(
+    replica_number = replica_number,
+    history = dnn_model_history,
+    validation_loss = validation_loss,
+    output_directory = SCRATCH_PATH
 )
 
-print("[INFO]: Smooth predictions saved.")
+plot_log_learning_curve(
+    replica_number = replica_number,
+    history = dnn_model_history,
+    validation_loss = validation_loss,
+    output_directory = SCRATCH_PATH
+)
+
+# make the predictions:
+predictions_z = dnn_model.predict(preprocessed_x_data, verbose = 0)
+predicted_bsa = y_scaler.inverse_transform(predictions_z)
+
+prediction_dataframe = pseudodata_dataframe.copy()
+
+r2 = plot_prediction_vs_truth(
+    truth = prediction_dataframe["unp_target_bsa"],
+    prediction = predicted_bsa,
+        output_path = (
+            SCRATCH_PATH
+            / f"version_{MAJOR_MINOR_NUMBER}"
+            / "plots"
+            / f"data_vs_prediction_replica_{replica_number}"
+    ),
+)
+
+pd.DataFrame(
+    [evaluation_metrics]).to_csv(
+        SCRATCH_PATH /
+        f"version_{MAJOR_MINOR_NUMBER}" /
+        "data" /
+        f"replica_{replica_number}_test_metrics.csv", 
+        index = False)
+
+#################################################################################
+# Collecting data:
+#################################################################################
+
+prediction_dataframe['split'] = pseudodata_dataframe['split'].values
+prediction_dataframe['original_bsa'] = pseudodata_dataframe['original_bsa'].values
+prediction_dataframe['bsa_err'] = pseudodata_dataframe['unp_target_bsa_err'].values
+prediction_dataframe['pseudodata_bsa'] = pseudodata_dataframe['unp_target_bsa'].values
+prediction_dataframe['model_bsa'] = predicted_bsa
+prediction_dataframe['replica_number'] = replica_number
+
+prediction_dataframe.to_csv(
+    SCRATCH_PATH /
+    f"version_{MAJOR_MINOR_NUMBER}" /
+    "data" /
+    f"replica_{replica_number}_predictions.csv",
+    index = False
+)
 
 #################################################################################
 # Metadata dump:
 #################################################################################
 
 metadata = {
+    "major_version": VERSION_NUMBER,
+    "minor_version": MINOR_NUMBER,
+    "total_version": MAJOR_MINOR_NUMBER,
+    "did_pseudodata_sampling": USING_GAUSSIAN_ERROR_SAMPLING,
+    "total_datasize": TOTAL_DATA_SIZE,
     "replica_id": replica_number,
-    "version": MAJOR_MINOR_NUMBER,
     "batch_size": _BATCH_SIZE,
     "max_epochs": _NUMBER_OF_EPOCHS,
+    "base_learning_rate": BASE_LEARNING_RATE,
     "actual_epochs": len(dnn_model_history.epoch),
     "training_points": len(x_training),
-    "features": list(x_training.columns),
-    "number_of_t": NUMBER_OF_T,
-    "number_of_xb": NUMBER_OF_XB,
-    "number_of_q2": NUMBER_OF_Q2,
-    "number_of_phi_deg": NUMBER_OF_PHI
+    "validation_points": len(x_validation),
+    "testing_points": len(x_testing),
+    "features": list(x_data.columns),
 }
 
 with open(
-    file = f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/data/replica_{replica_number}_metadata.json",
+    file =
+        SCRATCH_PATH /
+        f"version_{MAJOR_MINOR_NUMBER}" /
+        "data" /
+        f"replica_{replica_number}_metadata.json",
     mode = "w",
     encoding = "utf-8") as f:
     json.dump(metadata, f, indent = 4)
@@ -303,3 +430,10 @@ del dnn_model
 gc.collect()
 
 print("[INFO]: End of script reached!")
+
+#################################################################################
+# Some helpful resources
+#################################################################################
+
+# https://stackoverflow.com/a/17840195 -> for why we need to cast "evaluation 
+# metrics" into a list!
