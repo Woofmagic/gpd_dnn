@@ -3,8 +3,7 @@
 # Purpose: script version of the surrogate model
 # Created: 20260630
 # Last changed: 20260630
-# [NOTE]:
-# [TODO]:
+# Notes:
 #   1. 20260630: Maybe consider density plots using:
 #   https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.hist2d.html
 #################################################################################
@@ -101,7 +100,6 @@ def plot_learning_curve(
 
     axis.set_xlabel("Epoch")
     axis.set_ylabel("Loss")
-
     axis.set_title(f"Cross-Section Surrogate\nValidation Loss = {validation_loss:.6e}")
 
     axis.legend()
@@ -130,7 +128,6 @@ def plot_log_learning_curve(
 
     axis.set_xlabel("Epoch")
     axis.set_ylabel("Loss")
-
     axis.set_title(f"Cross-Section Surrogate\nValidation Loss = {validation_loss:.6e}")
 
     axis.legend()
@@ -163,8 +160,8 @@ def plot_prediction_vs_truth(truth, prediction, output_path):
     ax.plot(
         [minimum, maximum], [minimum, maximum],
         color = "red", linestyle = "-", label = "Perfect Fit",
-    
     )
+    
     ax.set_xscale("log")
     ax.set_yscale("log")
 
@@ -172,7 +169,7 @@ def plot_prediction_vs_truth(truth, prediction, output_path):
     ax.set_ylabel("DNN Prediction", fontsize = 14.)
 
     ax.text(
-        0.05, 0.95, f"$R^2$ = {r2_linear:.5f}\n", f"$R^2_{{\\log}}$ = {r2_log:.5f}",transform = ax.transAxes,
+        0.05, 0.95, f"$R^2$ = {r2_linear:.5f}\n", f"$R^2_{{\\log}}$ = {r2_log:.5f}", transform = ax.transAxes,
         ha = "left", va = "top", fontsize = 12., bbox = dict(facecolor = "white", alpha = 0.8),
     )
 
