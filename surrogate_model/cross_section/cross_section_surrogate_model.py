@@ -219,23 +219,6 @@ def plot_log_learning_curve(
 
     plt.close(figure)
 
-# have to go through the intermediate transformations:
-def predict_cross_section(model, x_dataframe, x_scaler, y_scaler):
-
-    # transform the data:
-    x_scaled = x_scaler.transform(x_dataframe)
-
-    # predict with the model (look at the call function):
-    model_prediction_in_z = model.predict(x_scaled, verbose = 0)
-
-    # return to log space:
-    log_sigma = y_scaler.inverse_transform(model_prediction_in_z)
-
-    # inverts the log sigma:
-    sigma = np.exp(log_sigma)
-
-    return sigma
-
 def plot_prediction_vs_truth(truth, prediction, output_path):
 
     # compute R^{2} stuff:
@@ -473,4 +456,5 @@ print("[INFO]: End of script reached!")
 # Some helpful resources
 #################################################################################
 
-# https://stackoverflow.com/a/17840195 -> for why we need to cast it into a list!
+# https://stackoverflow.com/a/17840195 -> for why we need to cast "evaluation 
+# metrics" into a list!
