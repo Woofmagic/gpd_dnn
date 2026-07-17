@@ -140,6 +140,9 @@ replica_paths = sorted(
 
 replicas = [tf.keras.models.load_model(
     path,
+    custom_objects = {
+            "CrossSectionSurrogateModel": CrossSectionSurrogateModel
+        },
     compile = False,
     safe_mode = False) for path in replica_paths]
 
@@ -331,7 +334,7 @@ for k_value, k_group in unique_k_values:
         })
 
         surface_predictions_all = np.array([
-            predict_cross_section(model, surface_dataframe, x_scaler,y_scaler)
+            predict_cross_section(model, surface_dataframe, x_scaler, y_scaler)
             for model in replicas
         ])
 
