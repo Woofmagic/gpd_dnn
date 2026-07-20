@@ -11,29 +11,19 @@ print(f"[INFO]: Script began running!")
 # Importing Python Libraries
 ##########################################
 
-import sys
-import gc
-
-import pandas as pd
 import numpy as np
 import tensorflow as tf
 
-print(f"[INFO]: Libraries imported!")
+print("[INFO]: Libraries imported!")
 
 ##########################################
 # Tensorflow Configuration
 ##########################################
 
-_INITIALIZER_MINIMUM_VALUE = -0.1
-_INITIALIZER_MAXMIMUM_VALUE = 0.1
-
 _NUMBER_NODES_HIDDEN_1 = 10
 _NUMBER_NODES_HIDDEN_2 = 10
 _NUMBER_NODES_HIDDEN_3 = 10
 _NUMBER_NODES_HIDDEN_4 = 10
-
-print(f"[INFO]: Replica DNN initializer minimum value set to {_INITIALIZER_MINIMUM_VALUE}")
-print(f"[INFO]: Replica DNN initializer maximum value set to {_INITIALIZER_MAXMIMUM_VALUE}")
 
 print(f"[INFO]: Replica DNN has {_NUMBER_NODES_HIDDEN_1} nodes in 1st hidden layer")
 print(f"[INFO]: Replica DNN has {_NUMBER_NODES_HIDDEN_2} nodes in 2nd hidden layer")
