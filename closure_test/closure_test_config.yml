@@ -1,12 +1,12 @@
 versioning:
   major: 1
-  minor: 1
+  minor: 2
 
 cff_config:
   enable_cff_real_h: True
   enable_cff_imag_h: True
-  enable_cff_real_e: False
-  enable_cff_imag_e: False
+  enable_cff_real_e: True
+  enable_cff_imag_e: True
   enable_cff_real_ht: False
   enable_cff_imag_ht: False
   enable_cff_real_et: False
@@ -15,4 +15,5 @@ cff_config:
 dnn_config:
   epochs: 750
   replicas: 1
-  batch_size: 20
+  batch_size: 50
+  adam_learning_rate: 0.001
