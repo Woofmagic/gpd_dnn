@@ -1,27 +1,22 @@
-##########################################
+####################################################################################################
 # FILE INFORMATION:
-# Purpose: runs *a* replica based on a single
-# DNN architecture.
-# Created: 20260107
-# Last changed: 20260429
-##########################################
+# Purpose: runs *a* replica based on a single DNN architecture.
+# Created: 20260520
+# Last changed: 20260721
+####################################################################################################
 
 print("[INFO]: Script began running!")
 
-##########################################
+####################################################################################################
 # Importing Python Libraries
-##########################################
+####################################################################################################
 
+import yaml
 import sys
 import gc
-import json
 
 import pandas as pd
-import numpy as np
 import tensorflow as tf
-
-from simultaneous_fit_dnn_config import _INITIALIZER_MINIMUM_VALUE
-from simultaneous_fit_dnn_config import _INITIALIZER_MAXMIMUM_VALUE
 
 from simultaneous_fit_dnn_config import _NUMBER_NODES_HIDDEN_1
 from simultaneous_fit_dnn_config import _NUMBER_NODES_HIDDEN_2
@@ -48,17 +43,19 @@ from simultaneous_fit_dnn_config import bkm10_bsa
 
 print("[INFO]: Libraries imported!")
 
-##########################################
-# [IMPORTANT]: Static quantities parametrizing
-# the program. Change these if you need!
-##########################################
+####################################################################################################
+# [IMPORTANT]: Static quantities parametrizing the program. Change these if you need!
+####################################################################################################
 
 # verify this is what you want
 SCRATCH_PATH = 'placeholder!'
 
-VERSION_NUMBER = 1
-MINOR_NUMBER = 1
-MAJOR_MINOR_NUMBER = f"{VERSION_NUMBER}_{MINOR_NUMBER}"
+with open("config.yml", "r") as file:
+    config = yaml.safe_load(file)
+
+MAJOR_NUMBER = config["versioning"]["major"]
+MINOR_NUMBER = config["versioning"]["minor"]
+MAJOR_MINOR_NUMBER = f"{MAJOR_NUMBER}_{MINOR_NUMBER}"
 
 print(f"[INFO]: We are saving figures and data with the following appendage: {MAJOR_MINOR_NUMBER}")
 
@@ -67,26 +64,27 @@ TEST_TARGET_POLARIZATION = 0.0
 
 print(f"[INFO]: Detected lepton helicity to be: {'unpolarized' if TEST_LEPTON_HELICITY == 0.0 else 'polarized'}")
 
-NUMBER_OF_REPLICAS = 100
-_NUMBER_OF_EPOCHS = 750
-_BATCH_SIZE = 1
+NUMBER_OF_EPOCHS = config["dnn_config"]["epochs"]
+NUMBER_OF_REPLICAS = config["dnn_config"]["replicas"]
+BATCH_SIZE = config["dnn_config"]["batch_size"]
+LEARNING_RATE = config["dnn_config"]["adam_learning_rate"]
 
-print(f"[INFO]: Each replica has a batch size of {_BATCH_SIZE}")
-print(f"[INFO]: Each replica will run for {_NUMBER_OF_EPOCHS} if assuming no EarlyStopping.")
+print(f"[INFO]: Each replica has a batch size of {BATCH_SIZE}")
+print(f"[INFO]: Each replica will run for {NUMBER_OF_EPOCHS} if assuming no EarlyStopping.")
 
-##########################################
+####################################################################################################
 # Reading the Datafile:
-##########################################
+####################################################################################################
 
 try:
     with open(
-        f"./pseudodata_slurm_logs/version_{MAJOR_MINOR_NUMBER}/valid_kinematic_sets_v{MAJOR_MINOR_NUMBER}.txt", 
+        f"./slurm_logs/version_{MAJOR_MINOR_NUMBER}/valid_kinematic_sets_v{MAJOR_MINOR_NUMBER}.txt", 
         "r",
         encoding = "utf-8") as good_kinematic_sets_file:
         # This creates a list like [2, 9, 15, ...]
         valid_kinematic_sets = [ int(line.strip()) for line in good_kinematic_sets_file if line.strip() ]
 except FileNotFoundError:
-    print(f"[ERROR]: Could not find pseudodata_slurm_logs/version_{MAJOR_MINOR_NUMBER}!")
+    print(f"[ERROR]: Could not find slurm_logs/version_{MAJOR_MINOR_NUMBER}!")
     sys.exit(1)
 
 print(f"[INFO]: Good kinematic sets were: {valid_kinematic_sets}")
@@ -152,19 +150,20 @@ y_validation = validation_df[["unp_beam_unp_target_xsec", "unp_target_bsa"]]
 x_testing = testing_df[["t", "x_b", "q_squared", "phi"]]
 y_testing = testing_df[["unp_beam_unp_target_xsec", "unp_target_bsa"]]
 
-if number_of_dnn_training_points <= _BATCH_SIZE:
+if number_of_dnn_training_points <= BATCH_SIZE:
     print(f"[WARN]: Number of training points is less than or equal to the batch size. Setting batch size equal to {number_of_dnn_training_points}.")
-    _BATCH_SIZE = number_of_dnn_training_points
+    BATCH_SIZE = number_of_dnn_training_points
 
-##########################################
+####################################################################################################
 # Tensorflow Configuration
-##########################################
+####################################################################################################
 
 print(f"[INFO]: Physical devices available to TF are: {tf.config.list_physical_devices()}")
 print(f"[INFO]: Number of GPUs Available: {len(tf.config.list_physical_devices('GPU'))}")
 print(f"[INFO]: Number of CPUs Available: {len(tf.config.list_physical_devices('CPU'))}")
 print(f"[INFO]: Checking the GPU name: {tf.test.gpu_device_name()}")
 
+@tf.keras.utils.register_keras_serializable(package = "simultaneous_fit_loss")
 class SimultaneousObservablesLoss(tf.keras.losses.Loss):
     def __init__(self, name = "simultaneous_observables_loss"):
         super().__init__(name = name)
@@ -173,21 +172,29 @@ class SimultaneousObservablesLoss(tf.keras.losses.Loss):
         self._OBSERVABLE_WEIGHT_2 = 0.5 * 1.0
         self._OBSERVABLE_WEIGHT_3 = 0.0 * 0.5
         self._OBSERVABLE_WEIGHT_4 = 0.0 * 0.5
-        
+
+    @tf.function
     def call(self, true_values, predicted_values):
         
+        # the CFFs:
         cff_h_real_tf = predicted_values[:, 0]
         cff_h_imag_tf = predicted_values[:, 1]
-        t_tf = predicted_values[:, 2]
-        xb_tf = predicted_values[:, 3]
-        q_squared_tf = predicted_values[:, 4]
-        phi_values = predicted_values[:, 5]
+        cff_ht_real_tf = predicted_values[:, 2]
+        cff_ht_imag_tf = predicted_values[:, 3]
 
+        # kinematics:
+        t_tf = predicted_values[:, 4]
+        xb_tf = predicted_values[:, 5]
+        q_squared_tf = predicted_values[:, 6]
+        phi_tf = predicted_values[:, 7]
+
+        # derived quantities -> form factors:
         fe_tf = compute_fe(t_tf)
-        fg_tf = compute_fg(fe_tf) 
+        fg_tf = compute_fg(fe_tf)
         f2_tf = compute_f2(t_tf, fe_tf, fg_tf)
         f1_tf = compute_f1(fg_tf, f2_tf)
-        
+
+        # derived quantities -> kinematics
         epsilon_tf = compute_epsilon(xb_tf, q_squared_tf)
         y_lep_tf = compute_y(FIXED_BEAM_ENERGY, q_squared_tf, epsilon_tf)
         xi_tf = compute_skewness(xb_tf, t_tf, q_squared_tf)
@@ -195,26 +202,29 @@ class SimultaneousObservablesLoss(tf.keras.losses.Loss):
         tprime_tf = compute_t_prime(t_tf, tmin_tf) # used in interference only
         ktilde_tf = compute_k_tilde(xb_tf, q_squared_tf, t_tf, tmin_tf, epsilon_tf)
         k_tf = compute_k(q_squared_tf, y_lep_tf, epsilon_tf, ktilde_tf)
-        kdd_tf = compute_k_dot_delta(q_squared_tf, xb_tf, t_tf, phi_values, epsilon_tf, y_lep_tf, k_tf)
+
+        # derived quantities -> phi-depdendent stuff:
+        kdd_tf = compute_k_dot_delta(q_squared_tf, xb_tf, t_tf, phi_tf, epsilon_tf, y_lep_tf, k_tf)
         p1_tf = prop_1(q_squared_tf, kdd_tf)
         p2_tf = prop_2(q_squared_tf, t_tf, kdd_tf)
-            
+
+        # observables:
         true_cross_section = true_values[:, 0]
         true_bsa = true_values[:, 1]
 
         cross_section = bkm10_cross_section(
             TEST_LEPTON_HELICITY, TEST_TARGET_POLARIZATION,
-            q_squared_tf, xb_tf, t_tf, epsilon_tf, y_lep_tf, xi_tf, k_tf, f1_tf, f2_tf, ktilde_tf, tprime_tf, phi_values, p1_tf, p2_tf,
-            cff_h_real_tf, CFF_REAL_HT_KM15, CFF_REAL_E_KM15, CFF_REAL_ET_KM15, cff_h_imag_tf, CFF_IMAG_HT_KM15, CFF_IMAG_E_KM15, CFF_IMAG_ET_KM15)
-        
+            q_squared_tf, xb_tf, t_tf, epsilon_tf, y_lep_tf, xi_tf, k_tf, f1_tf, f2_tf, ktilde_tf, tprime_tf, phi_tf, p1_tf, p2_tf,
+            cff_h_real_tf, cff_ht_real_tf, CFF_REAL_E_KM15, CFF_REAL_ET_KM15, cff_h_imag_tf, cff_ht_imag_tf, CFF_IMAG_E_KM15, CFF_IMAG_ET_KM15)
+
         # compute cross-section residuals:
         residuals_cross_section = true_cross_section - cross_section
 
         predicted_bsa = bkm10_bsa(
             TEST_TARGET_POLARIZATION,
-            q_squared_tf, xb_tf, t_tf, epsilon_tf, y_lep_tf, xi_tf, k_tf, f1_tf, f2_tf, ktilde_tf, tprime_tf, phi_values, p1_tf, p2_tf,
-            cff_h_real_tf, CFF_REAL_HT_KM15, CFF_REAL_E_KM15, CFF_REAL_ET_KM15, cff_h_imag_tf, CFF_IMAG_HT_KM15, CFF_IMAG_E_KM15, CFF_IMAG_ET_KM15)
-        
+            q_squared_tf, xb_tf, t_tf, epsilon_tf, y_lep_tf, xi_tf, k_tf, f1_tf, f2_tf, ktilde_tf, tprime_tf, phi_tf, p1_tf, p2_tf,
+            cff_h_real_tf, cff_ht_real_tf, CFF_REAL_E_KM15, CFF_REAL_ET_KM15, cff_h_imag_tf, cff_ht_imag_tf, CFF_IMAG_E_KM15, CFF_IMAG_ET_KM15)
+
         # compute BSA residuals:
         residuals_bsa = true_bsa - predicted_bsa
 
@@ -225,82 +235,55 @@ class SimultaneousObservablesLoss(tf.keras.losses.Loss):
             )
 
         return mean_squared_error
-    
+
+    def get_config(self):
+        # This is CRITICAL for saving/loading custom classes
+        config = super().get_config()
+        return config
+
 def cff_h_model():
-    initializer = tf.keras.initializers.RandomUniform(
-        minval = _INITIALIZER_MINIMUM_VALUE,
-        maxval = _INITIALIZER_MAXMIMUM_VALUE,
-        seed = None)
-    
     all_model_inputs = tf.keras.Input(shape = (4,), name = "input_values")
-    kinematic_inputs = tf.keras.layers.Lambda(lambda x: x[:, :3], name = 'input_kinematics')(all_model_inputs) # takes t, xb, qsquared
+    dnn_kinematic_inputs = tf.keras.layers.Lambda(lambda x: x[:, :3], name = "input_kinematics")(all_model_inputs)
 
     # [NOTE]: ONLY kinematic inputs goes into the DNN!
-    hidden = tf.keras.layers.Dense(_NUMBER_NODES_HIDDEN_1, kernel_initializer = initializer, activation = "relu")(kinematic_inputs)
-    hidden = tf.keras.layers.Dense(_NUMBER_NODES_HIDDEN_2, kernel_initializer = initializer, activation = "relu")(hidden)
-    hidden = tf.keras.layers.Dense(_NUMBER_NODES_HIDDEN_3, kernel_initializer = initializer, activation = "relu")(hidden)
-    hidden = tf.keras.layers.Dense(_NUMBER_NODES_HIDDEN_4, kernel_initializer = initializer, activation = "relu")(hidden)
-
-    # linear activation is default activation if `activation` key is not specified: https://www.tensorflow.org/api_docs/python/tf/keras/layers/Dense
-    cff_outputs = tf.keras.layers.Dense(2, activation = "linear", name = "cff_h")(hidden) # Re[H] and Im[H]
+    hidden = tf.keras.layers.Dense(_NUMBER_NODES_HIDDEN_1, kernel_initializer = "he_normal", activation = "relu")(dnn_kinematic_inputs)
+    hidden = tf.keras.layers.Dense(_NUMBER_NODES_HIDDEN_2, kernel_initializer = "he_normal", activation = "relu")(hidden)
+    hidden = tf.keras.layers.Dense(_NUMBER_NODES_HIDDEN_3, kernel_initializer = "he_normal", activation = "relu")(hidden)
+    hidden = tf.keras.layers.Dense(_NUMBER_NODES_HIDDEN_4, kernel_initializer = "he_normal", activation = "relu")(hidden)
     
-    full_model_outputs = tf.keras.layers.Concatenate(name = "kinematics_and_cffs")(
-        [cff_outputs, all_model_inputs])
+    cff_outputs = tf.keras.layers.Dense(4, activation = "linear", name = "cff_h_htilde")(hidden) # Re[H], Im[H], Re[Ht], Im[Ht]
+    
+    full_model_outputs = tf.keras.layers.Concatenate(
+        name = "physics_and_cffs")([cff_outputs, all_model_inputs])
     
     model = tf.keras.Model(
         inputs = all_model_inputs,
         outputs = full_model_outputs)
 
     model.compile(
-        optimizer = tf.keras.optimizers.Adam(),
+        optimizer = tf.keras.optimizers.Adam(learning_rate = LEARNING_RATE),
         loss = SimultaneousObservablesLoss())
-    
+
     return model
 
-##########################################
-# DNN Model Setup
-##########################################
-
-tf.keras.backend.clear_session()
+####################################################################################################
+# DNN model fitting
+####################################################################################################
 
 dnn_model = cff_h_model()
 
 dnn_model_history = dnn_model.fit(
-    x_training,
-    y_training,
+    x_training, y_training,
     validation_data = (x_validation, y_validation),
-    epochs = _NUMBER_OF_EPOCHS,
-    callbacks = [
-        tf.keras.callbacks.EarlyStopping(
-            monitor = 'val_loss',
-            patience = 25,
-            restore_best_weights = True
-        )
-    ],
-    batch_size = _BATCH_SIZE,
+    epochs = NUMBER_OF_EPOCHS,
+    batch_size = BATCH_SIZE,
     verbose = 0
     )
 
 number_of_epochs_run = len(dnn_model_history.epoch)
-print(f"[INFO]: The model ran for {number_of_epochs_run} epochs before early stopping.")
+print(f"The model ran for {number_of_epochs_run} epochs before early stopping.")
 
 dnn_model.save(f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_set_{kinematic_set_number}/replicas/replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.keras")
-
-metadata = {
-    "replica_id": replica_number,
-    "version": MAJOR_MINOR_NUMBER,
-    "batch_size": _BATCH_SIZE,
-    "max_epochs": _NUMBER_OF_EPOCHS,
-    "actual_epochs": len(dnn_model_history.epoch),
-    "training_points": len(x_training),
-    "features": list(x_training.columns)
-}
-
-with open(
-    file = f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_set_{kinematic_set_number}/data/replica_{replica_number}_metadata.json",
-    mode = "w",
-    encoding = "utf-8") as f:
-    json.dump(metadata, f, indent = 4)
 
 history_df = pd.DataFrame(dnn_model_history.history)
 history_df['epoch'] = range(1, len(history_df) + 1)
@@ -317,9 +300,7 @@ y_predictions = dnn_model.predict(x_testing)
 prediction_results = x_testing.copy()
 prediction_results['true_y'] = y_testing
 prediction_results['predicted_y'] = y_predictions.flatten()
-prediction_results.to_csv(
-    f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_set_{kinematic_set_number}/data/replica_{replica_number}_test_predictions.csv",
-    index = False)
+prediction_results.to_csv(f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_set_{kinematic_set_number}/data/replica_{replica_number}_test_predictions.csv", index = False)
 
 # cleanup
 del dnn_model
@@ -327,7 +308,12 @@ del training_df
 del validation_df
 del testing_df
 
+tf.keras.backend.clear_session()
 gc.collect()
+
+####################################################################################################
+# writing log file:
+####################################################################################################
 
 with open(
     file = f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_set_{kinematic_set_number}/learning_curves/log_v{MAJOR_MINOR_NUMBER}.txt",
@@ -335,11 +321,15 @@ with open(
     buffering = 1,
     encoding = 'utf-8') as logfile:
     logfile.write(f"[INFO]: #{kinematic_set_number}: Bin k = {FIXED_BEAM_ENERGY}, Q^2 = {FIXED_Q_SQUARED}, xb = {FIXED_X_BJORKEN}, t = {FIXED_T_VALUE}\n")
-    logfile.write(f"[INFO]: Re[H] = {CFF_REAL_H_KM15}, Im[H] = {CFF_IMAG_H_KM15}, Re[E] = {CFF_REAL_E_KM15}, Im[H] = {CFF_IMAG_E_KM15}\n")
-    logfile.write(f"[INFO]: Re[Ht] = {CFF_REAL_HT_KM15}, Im[Ht] = {CFF_IMAG_HT_KM15}, Re[Et] = {CFF_REAL_ET_KM15}, Im[Ht] = {CFF_IMAG_ET_KM15}\n")
+    logfile.write(f"[INFO]: Re[H] = {CFF_REAL_H_KM15}, Im[H] = {CFF_IMAG_H_KM15}, Re[E] = {CFF_REAL_E_KM15}, Im[E] = {CFF_IMAG_E_KM15}\n")
+    logfile.write(f"[INFO]: Re[Ht] = {CFF_REAL_HT_KM15}, Im[Ht] = {CFF_IMAG_HT_KM15}, Re[Et] = {CFF_REAL_ET_KM15}, Im[Et] = {CFF_IMAG_ET_KM15}\n")
     logfile.write(f"[INFO]: Total replicas: {NUMBER_OF_REPLICAS}\n")
-    logfile.write(f"[INFO]: Batch size: {_BATCH_SIZE}\n")
+    logfile.write(f"[INFO]: Batch size: {BATCH_SIZE}\n")
     logfile.write(f"[INFO]: Maximum number of epochs: {_NUMBER_OF_EPOCHS}\n")
     logfile.write(f"[INFO]: Out of {TOTAL_DATA_SIZE}, we picked {number_of_dnn_training_points} training, {number_of_dnn_validation_points} validation, and {number_of_dnn_testing_points} testing.\n")
+
+####################################################################################################
+# end the script
+####################################################################################################
 
 print("[INFO]: End of script reached!")
