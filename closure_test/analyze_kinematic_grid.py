@@ -1,46 +1,48 @@
-##########################################
+####################################################################################################
 # FILE INFORMATION:
-# Purpose: in case `kinematic_grid.py` does
-# not finish running entirely, we run this
-# analysis script to extract the data from
-# each kinematic setting anyway.
+# Purpose: in case `kinematic_grid.py` does not finish running entirely, we run this
+# analysis script to extract the data from each kinematic setting anyway.
 # Created: 20260302
-# Last changed: 20260308
-##########################################
+# Last changed: 20260721
+####################################################################################################
 
-print(f"[INFO]: Script began running!")
+print("[INFO]: Script began running!")
 
-##########################################
+####################################################################################################
 # Importing Python Libraries
-##########################################
+####################################################################################################
+
+import yaml
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-print(f"[INFO]: Libraries imported!")
+print("[INFO]: Libraries imported!")
 
-##########################################
-# [IMPORTANT]: Static quantities parametrizing
-# the program. Change these if you need!
-##########################################
+####################################################################################################
+# [IMPORTANT]: Static quantities parametrizing the program. Change these if you need!
+####################################################################################################
 
 # verify this is what you want
 SCRATCH_PATH = 'placeholder!'
 
-VERSION_NUMBER = 1
-MINOR_NUMBER = 1
-MAJOR_MINOR_NUMBER = f"{VERSION_NUMBER}_{MINOR_NUMBER}"
+with open("config.yml", "r") as file:
+    config = yaml.safe_load(file)
+
+MAJOR_NUMBER = config["versioning"]["major"]
+MINOR_NUMBER = config["versioning"]["minor"]
+MAJOR_MINOR_NUMBER = f"{MAJOR_NUMBER}_{MINOR_NUMBER}"
 
 print(f"[INFO]: We are saving figures and data with the following appendage: {MAJOR_MINOR_NUMBER}")
 
-##########################################
+####################################################################################################
 # Reading the Datafile:
-##########################################
+####################################################################################################
 
 # read the dataframe:
 test_dataframe = pd.read_csv(
-        filepath_or_buffer = f"./kinematic_grid_data_v{VERSION_NUMBER}.csv"
+        filepath_or_buffer = f"./kinematic_grid_data_v{MAJOR_MINOR_NUMBER}.csv"
     )
 
 unique_kinematic_sets_dataframe = test_dataframe.groupby(['set'], as_index = False).mean()
@@ -73,7 +75,7 @@ for column in test_dataframe.columns:
         label_plot = r"$d^{4}\sigma^{+L}$"
     # - beam | LP target
     elif column == "minus_beam_lp_target_xsec":
-        label_plot = r"$d^{4}\sigma^{-L}$"  
+        label_plot = r"$d^{4}\sigma^{-L}$"
 
     # BSA | unpolarized target:
     elif column == "unp_target_bsa":
@@ -144,4 +146,8 @@ for column in test_dataframe.columns:
     xb_vs_qsq_figure.savefig(f"./version_{MAJOR_MINOR_NUMBER}/plots/xb_vs_qsquared_for_{column}_v{MAJOR_MINOR_NUMBER}.eps")
     plt.close(xb_vs_qsq_figure)
 
-print(f"[INFO]: End of script reached!")
+####################################################################################################
+# end the script
+####################################################################################################
+
+print("[INFO]: End of script reached!")
