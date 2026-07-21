@@ -17,3 +17,18 @@ dnn_config:
   replicas: 1
   batch_size: 50
   adam_learning_rate: 0.001
+
+observable_config:
+  enable_unp_beam_unp_target_xsec: True
+  enable_plus_beam_unp_target_xsec: False
+  enable_minus_beam_unp_target_xsec: False
+  enable_unp_beam_lp_target_xsec: False
+  enable_plus_beam_lp_target_xsec: False
+  enable_minus_beam_lp_target_xsec: False
+  enable_unp_target_bsa: True
+  enable_plus_target_bsa: False
+  enable_minus_target_bsa: False
+  enable_unp_beam_tsa: False
+  enable_plus_beam_tsa: False
+  enable_minus_beam_tsa: False
+  enable_dsa: False
