@@ -325,7 +325,7 @@ with open(
     logfile.write(f"[INFO]: Re[Ht] = {CFF_REAL_HT_KM15}, Im[Ht] = {CFF_IMAG_HT_KM15}, Re[Et] = {CFF_REAL_ET_KM15}, Im[Et] = {CFF_IMAG_ET_KM15}\n")
     logfile.write(f"[INFO]: Total replicas: {NUMBER_OF_REPLICAS}\n")
     logfile.write(f"[INFO]: Batch size: {BATCH_SIZE}\n")
-    logfile.write(f"[INFO]: Maximum number of epochs: {_NUMBER_OF_EPOCHS}\n")
+    logfile.write(f"[INFO]: Maximum number of epochs: {NUMBER_OF_EPOCHS}\n")
     logfile.write(f"[INFO]: Out of {TOTAL_DATA_SIZE}, we picked {number_of_dnn_training_points} training, {number_of_dnn_validation_points} validation, and {number_of_dnn_testing_points} testing.\n")
 
 ####################################################################################################
