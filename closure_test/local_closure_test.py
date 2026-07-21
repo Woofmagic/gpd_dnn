@@ -54,6 +54,24 @@ IS_CFF_IMAG_E_FREE = config["cff_config"]["enable_cff_imag_e"]
 IS_CFF_REAL_ET_FREE = config["cff_config"]["enable_cff_real_et"]
 IS_CFF_IMAG_ET_FREE = config["cff_config"]["enable_cff_imag_et"]
 
+# cross-section observables:
+IS_UNP_BEAM_UNP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_unp_beam_unp_target_xsec"]
+IS_PLUS_BEAM_UNP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_plus_beam_unp_target_xsec"]
+IS_MINUS_BEAM_UNP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_minus_beam_unp_target_xsec"]
+IS_UNP_BEAM_LP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_unp_beam_lp_target_xsec"]
+IS_PLUS_BEAM_LP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_plus_beam_lp_target_xsec"]
+IS_MINUS_BEAM_LP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_minus_beam_lp_target_xsec"]
+
+IS_UNP_TARGET_BSA_INCLUDED = config["observable_config"]["enable_unp_target_bsa"]
+IS_PLUS_TARGET_BSA_INCLUDED = config["observable_config"]["enable_plus_target_bsa"]
+IS_MINUS_TARGET_BSA_INCLUDED = config["observable_config"]["enable_minus_target_bsa"]
+
+IS_UNP_BEAM_TSA_INCLUDED = config["observable_config"]["enable_unp_beam_tsa"]
+IS_PLUS_BEAM_TSA_INCLUDED = config["observable_config"]["enable_plus_beam_tsa"]
+IS_MINUS_BEAM_TSA_INCLUDED = config["observable_config"]["enable_minus_beam_tsa"]
+
+IS_DSA_INCLUDED = config["observable_config"]["enable_dsa"]
+
 print(f"[INFO]: Recieved major version number: {MAJOR_NUMBER}")
 print(f"[INFO]: Recieved minor version number: {MINOR_NUMBER}")
 print(f"[INFO]: Recieved total version number: {MAJOR_MINOR_NUMBER}")
@@ -338,7 +356,7 @@ def cff_h_model():
     model = tf.keras.Model(inputs = [kinematics_inputs, physics_input], outputs = full_model_outputs)
 
     model.compile(
-        optimizer = tf.keras.optimizers.Adam(learning_rate = LEARNING_RATE),
+        optimizer = tf.keras.optimizers.Adam(lening_rate = LEARNING_RATE),
         loss = SimultaneousObservablesLoss(),
         jit_compile = True,
         )
@@ -415,7 +433,7 @@ for replica_index, loss_file in enumerate(loss_files, start = 1):
     loss_information = np.load(loss_file)
 
     training_loss_data = loss_information["training_loss"]
-    validation_loss_data = loss_information["validation_loss"]
+    validation_loss_data = loss_information["validatioarn_loss"]
 
     number_of_epochs_run = len(training_loss_data)
     epochs = np.arange(number_of_epochs_run)
