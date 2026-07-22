@@ -26,4 +26,6 @@ ii) Multiply the two and then pass this number into the SLURM file.
 iii) Will early exit if kinematics are unphysical.
 iv) Generates all the replicas.
 
-TBD...
+6. Run `replica_average.slurm`
+
+i) The slurm parameter is the number of good kinematic settings.
