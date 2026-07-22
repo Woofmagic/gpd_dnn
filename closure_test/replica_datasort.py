@@ -1,9 +1,9 @@
-##########################################
+#################################################################################
 # FILE INFORMATION:
 # Purpose: generate replica pseudodata
 # Created: 20260325
-# Last changed: 20260427
-##########################################
+# Last changed: 20260722
+#################################################################################
 
 print("[INFO]: Script began running!")
 
@@ -11,6 +11,7 @@ print("[INFO]: Script began running!")
 # Libraries
 #################################################################################
 
+import yaml
 import sys
 
 import pandas as pd
@@ -28,11 +29,18 @@ SCRATCH_PATH = 'placeholder!'
 # Version numbers!
 #################################################################################
 
-VERSION_NUMBER = 1
-MINOR_NUMBER = 1
-MAJOR_MINOR_NUMBER = f"{VERSION_NUMBER}_{MINOR_NUMBER}"
+with open("config.yml", "r") as file:
+    config = yaml.safe_load(file)
+
+MAJOR_NUMBER = config["versioning"]["major"]
+MINOR_NUMBER = config["versioning"]["minor"]
+MAJOR_MINOR_NUMBER = f"{MAJOR_NUMBER}_{MINOR_NUMBER}"
 
 print(f"[INFO]: We are saving figures and data with the following appendage: {MAJOR_MINOR_NUMBER}")
+
+NUMBER_OF_REPLICAS = config["dnn_config"]["replicas"]
+
+print(f"[INFO]: We anticipate {NUMBER_OF_REPLICAS} total replicas at a single kinematic point.")
 
 #################################################################################
 # Begin main program flow!
@@ -40,7 +48,6 @@ print(f"[INFO]: We are saving figures and data with the following appendage: {MA
 
 # sampling true points with error distribution
 USING_GAUSSIAN_ERROR_SAMPLING = True
-NUMBER_OF_REPLICAS = 100
 _DNN_TESTING_TEMPORARY_SPLIT_PERCENTAGE = 0.8 # 80% temporary, 20% testing
 _DNN_TRAINING_VALIDATION_SPLIT_PERCENTAGE = 0.8 # of the above 80% temporary, 80% training, 20% validation
 
@@ -49,7 +56,7 @@ _DNN_TRAINING_VALIDATION_SPLIT_PERCENTAGE = 0.8 # of the above 80% temporary, 80
 #################################################################################
 
 with open(
-    f"./pseudodata_slurm_logs/version_{MAJOR_MINOR_NUMBER}/valid_kinematic_sets_v{MAJOR_MINOR_NUMBER}.txt", 
+    f"./slurm_logs/version_{MAJOR_MINOR_NUMBER}/valid_kinematic_sets_v{MAJOR_MINOR_NUMBER}.txt", 
     "r",
     encoding = "utf-8") as good_kinematic_sets_file:
     # This creates a list like [2, 9, 15, ...]
@@ -171,9 +178,9 @@ number_of_dnn_testing_points = TOTAL_DATA_SIZE - number_of_dnn_temporary_points
 number_of_dnn_training_points = int(np.ceil(number_of_dnn_temporary_points * _DNN_TRAINING_VALIDATION_SPLIT_PERCENTAGE))
 number_of_dnn_validation_points = TOTAL_DATA_SIZE - number_of_dnn_training_points - number_of_dnn_testing_points
 
-print(f"[NOTE]: Testing/Temporary Split is {_DNN_TESTING_TEMPORARY_SPLIT_PERCENTAGE * 100}%, giving {number_of_dnn_testing_points} testing points (with ceiling).")
-print(f"[NOTE]: Training/Validation Split is {_DNN_TRAINING_VALIDATION_SPLIT_PERCENTAGE * 100}%, giving {number_of_dnn_validation_points} validation points (with ceiling).")
-print(f"[NOTE]: Remaining training data points are: {number_of_dnn_training_points}")
+print(f"[INFO]: Testing/Temporary Split is {_DNN_TESTING_TEMPORARY_SPLIT_PERCENTAGE * 100}%, giving {number_of_dnn_testing_points} testing points (with ceiling).")
+print(f"[INFO]: Training/Validation Split is {_DNN_TRAINING_VALIDATION_SPLIT_PERCENTAGE * 100}%, giving {number_of_dnn_validation_points} validation points (with ceiling).")
+print(f"[INFO]: Remaining training data points are: {number_of_dnn_training_points}")
 
 print(f"[INFO]: This replica number is: Replica #{replica_number}")
 
@@ -218,5 +225,9 @@ pseudodata_dataframe.to_csv(
     path_or_buf = f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_set_{kinematic_set_number}/data/dnn_data_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.csv",
     index = False
 )
+
+####################################################################################################
+# end the script
+####################################################################################################
 
 print("[INFO]: End of script reached!")
