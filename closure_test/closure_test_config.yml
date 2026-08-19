@@ -1,16 +1,21 @@
 versioning:
   major: 1
-  minor: 2
+  minor: 1
 
 cff_config:
   enable_cff_real_h: True
   enable_cff_imag_h: True
-  enable_cff_real_e: True
-  enable_cff_imag_e: True
-  enable_cff_real_ht: False
-  enable_cff_imag_ht: False
+  enable_cff_real_e: False
+  enable_cff_imag_e: False
+  enable_cff_real_ht: True
+  enable_cff_imag_ht: True
   enable_cff_real_et: False
   enable_cff_imag_et: False
+
+data_config:
+  start_value_of_phi_in_degrees: 0
+  end_value_of_phi_in_degrees: 360
+  number_of_phi_points: 360
 
 dnn_config:
   epochs: 750
