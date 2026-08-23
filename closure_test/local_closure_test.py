@@ -6,7 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-import corner
+
 from scipy.stats import norm
 from sklearn.model_selection import train_test_split
 import gepard as g
@@ -32,6 +32,8 @@ from simultaneous_fit_dnn_config import prop_2
 
 from simultaneous_fit_dnn_config import bkm10_cross_section
 from simultaneous_fit_dnn_config import bkm10_bsa
+
+print(f"[INFO]: Libraries imported!")
 
 with open("closure_test_config.yml", "r") as file:
     config = yaml.safe_load(file)
@@ -83,7 +85,7 @@ print(f"[INFO]: Received (Adam) learning rate value: {LEARNING_RATE}")
 
 STARTING_PHI_VALUE_IN_DEGREES = 0
 ENDING_PHI_VALUE_IN_DEGREES = 360
-NUMBER_OF_PHI_POINTS = 100
+NUMBER_OF_PHI_POINTS = 360 + 1
 
 phi_array_in_degrees = np.linspace(
     start = STARTING_PHI_VALUE_IN_DEGREES,
@@ -154,7 +156,7 @@ this_kinematic_set_title_string = (
 
 km15_cross_section = DifferentialCrossSection(
     configuration = {
-        "kinematics_and_phi": BKM10Inputs(
+        "kinematics": BKM10Inputs(
             lab_kinematics_k = FIXED_K,
             squared_Q_momentum_transfer = FIXED_Q_SQUARED,
             x_Bjorken = FIXED_XB,
@@ -203,7 +205,7 @@ k_dot_delta = compute_k_dot_delta(
 prop_1_values = prop_1(q2, k_dot_delta)
 prop_2_values = prop_2(q2, t, k_dot_delta)
 
-kinematics_and_phi = np.column_stack((t, xb, q2, phi, )).astype(np.float32)
+kinematics_and_phi = np.column_stack((t, xb, q2, phi)).astype(np.float32)
 
 physics_data = np.column_stack((
     # kinematics, phi:
@@ -226,7 +228,7 @@ observables = np.column_stack((
 
 indices = np.arange(NUMBER_OF_PHI_POINTS)
 
-dnn_inputs = np.column_stack((t, xb, q2, )).astype(np.float32)
+dnn_inputs = np.column_stack((t, xb, q2)).astype(np.float32)
 
 training_indices, testing_indices = train_test_split(
     indices, test_size = 0.10, random_state = 7009,)
@@ -351,12 +353,13 @@ def cff_h_model():
     hidden = tf.keras.layers.Dense(10, kernel_initializer = "he_normal", activation = "relu")(hidden)
     hidden = tf.keras.layers.Dense(10, kernel_initializer = "he_normal", activation = "relu")(hidden)
     hidden = tf.keras.layers.Dense(10, kernel_initializer = "he_normal", activation = "relu")(hidden)
-    cff_outputs = tf.keras.layers.Dense(4, activation = "linear", name = "cff_h_htilde")(hidden) # Re[H], Im[H], Re[Ht], Im[Ht]
+    # Re[H], Im[H], Re[Ht], Im[Ht], Re[E], Im[E], Re[Et], Im[Et]
+    cff_outputs = tf.keras.layers.Dense(8, activation = "linear", name = "cff_h_htilde")(hidden)
     full_model_outputs = tf.keras.layers.Concatenate(name = "physics_and_cffs")([cff_outputs, physics_input])
     model = tf.keras.Model(inputs = [kinematics_inputs, physics_input], outputs = full_model_outputs)
 
     model.compile(
-        optimizer = tf.keras.optimizers.Adam(lening_rate = LEARNING_RATE),
+        optimizer = tf.keras.optimizers.Adam(learning_rate = LEARNING_RATE),
         loss = SimultaneousObservablesLoss(),
         jit_compile = True,
         )
@@ -433,7 +436,7 @@ for replica_index, loss_file in enumerate(loss_files, start = 1):
     loss_information = np.load(loss_file)
 
     training_loss_data = loss_information["training_loss"]
-    validation_loss_data = loss_information["validatioarn_loss"]
+    validation_loss_data = loss_information["validation_loss"]
 
     number_of_epochs_run = len(training_loss_data)
     epochs = np.arange(number_of_epochs_run)
@@ -469,17 +472,17 @@ for replica_index, loss_file in enumerate(loss_files, start = 1):
 
     curves_ax.set_xlabel("Epoch", fontsize = 15)
     curves_ax.set_ylabel("MSE", fontsize = 15)
-    curves_ax.set_title(f"Replica {replica + 1} Learning Curves\n(Eval. Loss $= {testing_loss:.3g}$", fontsize = 16.)
+    curves_ax.set_title(f"Replica {replica_index} Learning Curves\n(Eval. Loss $= {testing_loss:.3g}$", fontsize = 16.)
 
     log_curves_ax.set_xlabel("Epoch", fontsize = 15)
     log_curves_ax.set_ylabel("Log MSE Loss", fontsize = 15)
-    log_curves_ax.set_title(f"Replica {replica + 1} Learning Curves\n(Eval. Loss $= {testing_loss:.3g}$", fontsize = 15.)
+    log_curves_ax.set_title(f"Replica {replica_index} Learning Curves\n(Eval. Loss $= {testing_loss:.3g}$", fontsize = 15.)
 
-    curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/lc_replica_{replica + 1}_v{MAJOR_MINOR_NUMBER}.png")
-    curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/lc_replica_{replica + 1}_v{MAJOR_MINOR_NUMBER}.eps")
+    curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/lc_replica_{replica_index}_v{MAJOR_MINOR_NUMBER}.png")
+    curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/lc_replica_{replica_index}_v{MAJOR_MINOR_NUMBER}.eps")
 
-    log_curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/log_lc_replica_{replica + 1}_v{MAJOR_MINOR_NUMBER}.png")
-    log_curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/log_lc_replica_{replica + 1}_v{MAJOR_MINOR_NUMBER}.eps")
+    log_curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/log_lc_replica_{replica_index}_v{MAJOR_MINOR_NUMBER}.png")
+    log_curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/log_lc_replica_{replica_index}_v{MAJOR_MINOR_NUMBER}.eps")
 
     plt.close(curves_fig)
     plt.close(log_curves_fig)
