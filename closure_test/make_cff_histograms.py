@@ -295,7 +295,7 @@ def make_cff_histogram(
         f"Figure rendered {datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
         transform = cff_axis.transAxes)
 
-    plt.tight_layout()
+    cff_figure.tight_layout()
 
     os.makedirs(
         f"./hpc/version_{version_number}/kinematic_set_{kinematic_set}/plots", 
