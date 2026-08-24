@@ -1,10 +1,9 @@
 ####################################################################################################
 # FILE INFORMATION:
-# Purpose: generates a .csv file containing
-# pseudodata for training DNN models down
+# Purpose: generates a .csv file containing pseudodata for training DNN models down
 # the line.
 # Created: 20260107
-# Last changed: 20260720
+# Last changed: 20260822
 ####################################################################################################
 
 print("[INFO]: Script began running!")
@@ -26,7 +25,7 @@ from bkm10_lib.core import DifferentialCrossSection
 from bkm10_lib.inputs import BKM10Inputs
 from bkm10_lib.cff_inputs import CFFInputs
 
-print("[INFO]: Libraries imported!")
+print(f"[INFO]: Libraries imported!")
 
 ####################################################################################################
 # [IMPORTANT]: Static quantities parametrizing the program. Change these if you need!
@@ -53,7 +52,30 @@ IS_CFF_IMAG_E_FREE = config["cff_config"]["enable_cff_imag_e"]
 IS_CFF_REAL_ET_FREE = config["cff_config"]["enable_cff_real_et"]
 IS_CFF_IMAG_ET_FREE = config["cff_config"]["enable_cff_imag_et"]
 
-print(f"[INFO]: We are saving figures and data with the following appendage: {MAJOR_MINOR_NUMBER}")
+# cross-section observables:
+IS_UNP_BEAM_UNP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_unp_beam_unp_target_xsec"]
+IS_PLUS_BEAM_UNP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_plus_beam_unp_target_xsec"]
+IS_MINUS_BEAM_UNP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_minus_beam_unp_target_xsec"]
+IS_UNP_BEAM_LP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_unp_beam_lp_target_xsec"]
+IS_PLUS_BEAM_LP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_plus_beam_lp_target_xsec"]
+IS_MINUS_BEAM_LP_TARGET_XSEC_INCLUDED = config["observable_config"]["enable_minus_beam_lp_target_xsec"]
+
+# BSA:
+IS_UNP_TARGET_BSA_INCLUDED = config["observable_config"]["enable_unp_target_bsa"]
+IS_PLUS_TARGET_BSA_INCLUDED = config["observable_config"]["enable_plus_target_bsa"]
+IS_MINUS_TARGET_BSA_INCLUDED = config["observable_config"]["enable_minus_target_bsa"]
+
+# TSA:
+IS_UNP_BEAM_TSA_INCLUDED = config["observable_config"]["enable_unp_beam_tsa"]
+IS_PLUS_BEAM_TSA_INCLUDED = config["observable_config"]["enable_plus_beam_tsa"]
+IS_MINUS_BEAM_TSA_INCLUDED = config["observable_config"]["enable_minus_beam_tsa"]
+
+# DSA:
+IS_DSA_INCLUDED = config["observable_config"]["enable_dsa"]
+
+STARTING_PHI_VALUE_IN_DEGREES = config["data_config"]["start_value_of_phi_in_degrees"]
+ENDING_PHI_VALUE_IN_DEGREES = config["data_config"]["end_value_of_phi_in_degrees"]
+NUMBER_OF_PHI_POINTS = config["data_config"]["number_of_phi_points"] + 1
 
 ####################################################################################################
 # Make a *custom-defined* grid of kinematic settings
@@ -67,7 +89,7 @@ Q_SQUARED_UPPER = 5.0
 X_B_LOWER = 0.1
 X_B_UPPER = 0.9
 T_LOWER = -1.0
-T_UPPER = -.1
+T_UPPER = -0.1
 
 # number of points for each variable
 NUMBER_OF_BEAM_K = 2
@@ -81,13 +103,8 @@ Q2_RANGE = np.linspace(Q_SQUARED_LOWER, Q_SQUARED_UPPER, NUMBER_OF_Q_SQUARED)
 X_B_RANGE = np.linspace(X_B_LOWER, X_B_UPPER, NUMBER_OF_X_B)
 T_RANGE = np.linspace(T_LOWER, T_UPPER, NUMBER_OF_T)
 
-# why +1? To make the linspace more even
-NUMBER_OF_PHI_POINTS = 360 + 1
-STARTING_PHI_VALUE_IN_DEGREES = 0
-ENDING_PHI_VALUE_IN_DEGREES = 360
-
 ####################################################################################################
-# Initializing the Phi Array
+# Make the array of phi points
 ####################################################################################################
 
 phi_array_in_degrees = np.linspace(
@@ -96,11 +113,14 @@ phi_array_in_degrees = np.linspace(
     num = NUMBER_OF_PHI_POINTS)
 
 phi_array_in_radians = np.array([np.radians(degree_value) for degree_value in phi_array_in_degrees])
-print(f"[INFO]: We have constructed a Python list of length {len(phi_array_in_radians)} of azimuthal angles")
-print(f"[INFO]: We start at phi = {STARTING_PHI_VALUE_IN_DEGREES} degrees to phi = {ENDING_PHI_VALUE_IN_DEGREES} degrees.")
+
+print(
+    f"[INFO]: We have constructed a Python list of length {len(phi_array_in_radians)} of azimuthal angles "
+    f"from {STARTING_PHI_VALUE_IN_DEGREES} degrees to {ENDING_PHI_VALUE_IN_DEGREES} degrees."
+    )
 
 ####################################################################################################
-# Tons of TensorFlow Functions
+# Required TensorFlow stuff
 ####################################################################################################
 
 _MASS_OF_PROTON_IN_GEV = 0.93827208816
@@ -143,9 +163,9 @@ def compute_k_tilde(xb, q_squared, t, tmin, ep):
 def compute_k(q_squared, y_lep, ep, k_tilde):
     return np.sqrt(((1. - y_lep + (ep**2 * y_lep**2 / 4.)) / q_squared)) * k_tilde
 
-###########################################################################################################################################
+####################################################################################################
 # Making the actual pseudodata file
-###########################################################################################################################################
+####################################################################################################
 
 rows = []
 total_kinematic_settings = NUMBER_OF_BEAM_K * NUMBER_OF_Q_SQUARED * NUMBER_OF_X_B * NUMBER_OF_T
@@ -169,7 +189,7 @@ fixed_q_squared = Q2_RANGE[indices_for_qsquared]
 fixed_x_bjorken = X_B_RANGE[indices_for_xb]
 fixed_t = T_RANGE[indices_for_t]
 
-print(f"[INFO]: Task {kinematic_set_number} corresponds to: k = {fixed_k}, q2 = {fixed_q_squared}, x = {fixed_x_bjorken}, t = {fixed_t}\n")
+print(f"[INFO]: Task {kinematic_set_number} corresponds to: k = {fixed_k}, q2 = {fixed_q_squared}, x = {fixed_x_bjorken}, t = {fixed_t}")
 
 # using gepard's DataPoint with phi varying:
 current_kinematic_setting = [g.DataPoint(
@@ -182,7 +202,7 @@ current_kinematic_setting = [g.DataPoint(
     in1energy = fixed_k,
     in1charge = -1,
     in1polarization = +1,
-    observable = 'XS',
+    observable = 'XUU',
     fname = 'Trento') for fixed_phi in phi_array_in_radians]
 
 assert len(current_kinematic_setting) == len(phi_array_in_radians), "[ASSERT]: Datapoint array has wrong size."
@@ -256,110 +276,176 @@ km15_cross_section = DifferentialCrossSection(
 # d^{4}\sigma(lambda = 0, Lambda = 0)
 ####################################################################################################
 
-bkm10_unp_beam_unp_target_km15 = km15_cross_section.compute_cross_section(
-    phi_array_in_radians,
-    lepton_helicity = 0.0,
-    target_polarization = 0.0).real
+if IS_UNP_BEAM_UNP_TARGET_XSEC_INCLUDED:
+    bkm10_unp_beam_unp_target_km15 = km15_cross_section.compute_cross_section(
+        phi_array_in_radians,
+        lepton_helicity = 0.0,
+        target_polarization = 0.0
+    ).real
+else:
+    bkm10_unp_beam_unp_target_km15 = np.zeros_like(phi_array_in_radians)
 
+print(f"[INFO]: Did we include sigma(0, 0)? {IS_UNP_BEAM_UNP_TARGET_XSEC_INCLUDED}")
+    
 ####################################################################################################
 # d^{4}\sigma(lambda = +1, Lambda = 0)
 ####################################################################################################
 
-bkm10_plus_beam_unp_target_km15 = km15_cross_section.compute_cross_section(
-    phi_array_in_radians,
-    lepton_helicity = +1.0,
-    target_polarization = 0.0).real
+if IS_PLUS_BEAM_UNP_TARGET_XSEC_INCLUDED:
+    bkm10_plus_beam_unp_target_km15 = km15_cross_section.compute_cross_section(
+        phi_array_in_radians,
+        lepton_helicity = +1.0,
+        target_polarization = 0.0).real
+else:
+    bkm10_plus_beam_unp_target_km15 = np.zeros_like(phi_array_in_radians)
+
+print(f"[INFO]: Did we include sigma(+1, 0)? {IS_PLUS_BEAM_UNP_TARGET_XSEC_INCLUDED}")
     
 ####################################################################################################
 # d^{4}\sigma(lambda = -1, Lambda = 0)
 ####################################################################################################
 
-bkm10_minus_beam_unp_target_km15 = km15_cross_section.compute_cross_section(
-    phi_array_in_radians,
-    lepton_helicity = -1.0,
-    target_polarization = 0.0).real
-    
+if IS_MINUS_BEAM_UNP_TARGET_XSEC_INCLUDED:
+    bkm10_minus_beam_unp_target_km15 = km15_cross_section.compute_cross_section(
+        phi_array_in_radians,
+        lepton_helicity = -1.0,
+        target_polarization = 0.0).real
+else:
+    bkm10_minus_beam_unp_target_km15 = np.zeros_like(phi_array_in_radians)
+
+print(f"[INFO]: Did we include sigma(-1, 0)? {IS_MINUS_BEAM_UNP_TARGET_XSEC_INCLUDED}")
+
 ####################################################################################################
 # d^{4}\sigma(lambda = 0, Lambda = 1/2)
 ####################################################################################################
 
-bkm10_unp_beam_lp_target_km15 = km15_cross_section.compute_cross_section(
-    phi_array_in_radians,
-    lepton_helicity = 0.0,
-    target_polarization = +0.5).real
-    
+if IS_UNP_BEAM_LP_TARGET_XSEC_INCLUDED:
+    bkm10_unp_beam_lp_target_km15 = km15_cross_section.compute_cross_section(
+        phi_array_in_radians,
+        lepton_helicity = 0.0,
+        target_polarization = +0.5).real
+else:
+    bkm10_minus_beam_unp_target_km15 = np.zeros_like(phi_array_in_radians)
+
+print(f"[INFO]: Did we include sigma(0, +1/2)? {IS_UNP_BEAM_LP_TARGET_XSEC_INCLUDED}")
+
 ####################################################################################################
 # d^{4}\sigma(lambda = +1, Lambda = 1/2)
 ####################################################################################################
     
-bkm10_plus_beam_lp_target_km15 = km15_cross_section.compute_cross_section(
-    phi_array_in_radians,
-    lepton_helicity = +1.0,
-    target_polarization = +0.5).real
-    
+if IS_PLUS_BEAM_LP_TARGET_XSEC_INCLUDED:
+    bkm10_plus_beam_lp_target_km15 = km15_cross_section.compute_cross_section(
+        phi_array_in_radians,
+        lepton_helicity = +1.0,
+        target_polarization = +0.5).real
+else:
+    bkm10_plus_beam_lp_target_km15 = np.zeros_like(phi_array_in_radians)
+
+print(f"[INFO]: Did we include sigma(+1, +1/2)? {IS_PLUS_BEAM_LP_TARGET_XSEC_INCLUDED}")
+
 ####################################################################################################
 # d^{4}\sigma(lambda = -1, Lambda = 1/2)
 ####################################################################################################
 
-bkm10_minus_beam_lp_target_km15 = km15_cross_section.compute_cross_section(
-    phi_array_in_radians,
-    lepton_helicity = -1.0,
-    target_polarization = +0.5).real
+if IS_PLUS_BEAM_LP_TARGET_XSEC_INCLUDED:
+    bkm10_minus_beam_lp_target_km15 = km15_cross_section.compute_cross_section(
+        phi_array_in_radians,
+        lepton_helicity = -1.0,
+        target_polarization = +0.5).real
+else:
+    bkm10_minus_beam_lp_target_km15 = np.zeros_like(phi_array_in_radians)
+
+print(f"[INFO]: Did we include sigma(-1, +1/2)? {IS_PLUS_BEAM_LP_TARGET_XSEC_INCLUDED}")
 
 ####################################################################################################
 # BSA(Lambda = 0)
 ####################################################################################################
-    
-bkm10_bsa_km15 = km15_cross_section.compute_bsa(
-    phi_array_in_radians,
-    target_polarization = 0.0).real
+
+if IS_UNP_TARGET_BSA_INCLUDED:
+    bkm10_bsa_km15 = km15_cross_section.compute_bsa(
+        phi_array_in_radians,
+        target_polarization = 0.0).real
+else:
+    bkm10_minus_beam_lp_target_km15 = np.zeros_like(phi_array_in_radians)
+
+print(f"[INFO]: Did we include BSA(0)? {IS_UNP_TARGET_BSA_INCLUDED}")
 
 ####################################################################################################
 # BSA(Lambda = 1/2)
 ####################################################################################################
     
-bkm10_plus_lp_bsa_km15 = km15_cross_section.compute_bsa(
-    phi_array_in_radians,
-    target_polarization = +0.5).real
+if IS_PLUS_TARGET_BSA_INCLUDED:
+    bkm10_plus_lp_bsa_km15 = km15_cross_section.compute_bsa(
+        phi_array_in_radians,
+        target_polarization = +0.5).real
+else:
+    bkm10_plus_lp_bsa_km15 = np.zeros_like(phi_array_in_radians)
+
+print(f"[INFO]: Did we include BSA(+1/2)? {IS_UNP_TARGET_BSA_INCLUDED}")
 
 ####################################################################################################
 # BSA(Lambda = -1/2)
 ####################################################################################################
     
-bkm10_minus_lp_bsa_km15 = km15_cross_section.compute_bsa(
-    phi_array_in_radians,
-    target_polarization = -0.5).real
+if IS_MINUS_TARGET_BSA_INCLUDED:
+    bkm10_minus_lp_bsa_km15 = km15_cross_section.compute_bsa(
+        phi_array_in_radians,
+        target_polarization = -0.5).real
+else:
+    bkm10_minus_lp_bsa_km15 = np.zeros_like(phi_array_in_radians)
 
-# ####################################################################################################
-# # TSA(lambda = 0.0)
-# ####################################################################################################
+print(f"[INFO]: Did we include BSA(-1/2)? {IS_UNP_TARGET_BSA_INCLUDED}")
 
-bkm10_tsa_km15 = km15_cross_section.compute_tsa(
-    phi_array_in_radians,
-    lepton_polarization = 0.0).real
+####################################################################################################
+# TSA(lambda = 0.0)
+####################################################################################################
 
-# ####################################################################################################
-# # TSA(lambda = +1.0)
-# ####################################################################################################
+if IS_UNP_BEAM_TSA_INCLUDED:
+    bkm10_tsa_km15 = km15_cross_section.compute_tsa(
+        phi_array_in_radians,
+        lepton_polarization = 0.0).real
+else:
+    bkm10_tsa_km15 = np.zeros_like(phi_array_in_radians)
 
-bkm10_plus_beam_tsa_km15 = km15_cross_section.compute_tsa(
-    phi_array_in_radians,
-    lepton_polarization = +1.0).real
+print(f"[INFO]: Did we include TSA(0)? {IS_UNP_BEAM_TSA_INCLUDED}")
 
-# ####################################################################################################
-# # TSA(lambda = -1.0)
-# ####################################################################################################
+####################################################################################################
+# TSA(lambda = +1.0)
+####################################################################################################
 
-bkm10_minus_beam_tsa_km15 = km15_cross_section.compute_tsa(
-    phi_array_in_radians,
-    lepton_polarization = -1.0).real
+if IS_PLUS_BEAM_TSA_INCLUDED:
+    bkm10_plus_beam_tsa_km15 = km15_cross_section.compute_tsa(
+        phi_array_in_radians,
+        lepton_polarization = +1.0).real
+else:
+    bkm10_plus_beam_tsa_km15 = np.zeros_like(phi_array_in_radians)
 
-# ####################################################################################################
-# # DSA
-# ####################################################################################################
+print(f"[INFO]: Did we include TSA(+1)? {IS_PLUS_BEAM_TSA_INCLUDED}")
 
-bkm10_dsa_km15 = km15_cross_section.compute_dsa(
-    phi_array_in_radians).real
+####################################################################################################
+# TSA(lambda = -1.0)
+####################################################################################################
+
+if IS_MINUS_BEAM_TSA_INCLUDED:
+    bkm10_minus_beam_tsa_km15 = km15_cross_section.compute_tsa(
+        phi_array_in_radians,
+        lepton_polarization = -1.0).real
+else:
+    bkm10_minus_beam_tsa_km15 = np.zeros_like(phi_array_in_radians)
+
+print(f"[INFO]: Did we include TSA(-1)? {IS_MINUS_BEAM_TSA_INCLUDED}")
+
+####################################################################################################
+# DSA
+####################################################################################################
+
+if IS_DSA_INCLUDED:
+    bkm10_dsa_km15 = km15_cross_section.compute_dsa(
+        phi_array_in_radians).real
+else:
+    bkm10_dsa_km15 = np.zeros_like(phi_array_in_radians)
+
+print(f"[INFO]: Did we include DSA? {IS_DSA_INCLUDED}")
 
 ####################################################################################################
 # Making required directories
@@ -409,7 +495,8 @@ for phi_index, phi_value in enumerate(phi_array_in_radians):
     this_kinematic_set_dataframe.append(new_entry)
 
 pd.DataFrame(this_kinematic_set_dataframe).to_csv(
-    path_or_buf = f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_set_{kinematic_set_number}/data/main_pseudodata_file_set_{kinematic_set_number}_v{MAJOR_MINOR_NUMBER}.csv"
+    path_or_buf = f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_set_{kinematic_set_number}/data/main_pseudodata_file_set_{kinematic_set_number}_v{MAJOR_MINOR_NUMBER}.csv",
+    index = False
 )
 
 # clean up:
@@ -449,7 +536,7 @@ with open(
     logfile.write(f"[INFO]: tprime = {fixed_t_prime}\n")
     logfile.write(f"[INFO]: FE = {fixed_fe}\n")
     logfile.write(f"[INFO]: FG = {fixed_fg}\n")
-    logfile.write(f"[INFO]: F2 = {fixed_f2}\n")
+    logfile.write(f"[INFO]: F2 = {fixed_f2}\n")     
     logfile.write(f"[INFO]: F1 = {fixed_f1}\n")
 
     logfile.write(f"[INFO]: Made new directory at path: {SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_set_{kinematic_set_number}/data\n")
@@ -465,7 +552,9 @@ print(f"[INFO]: Has iteration successfully executed: {kinematic_set_number == to
 print(f"[INFO]: New dataframe has {len(rows)} total rows.")
 
 kinematic_grid_data = pd.DataFrame(rows)
-kinematic_grid_data.to_csv(f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_grid_data_v{MAJOR_MINOR_NUMBER}.csv")
+kinematic_grid_data.to_csv(
+    f"{SCRATCH_PATH}/version_{MAJOR_MINOR_NUMBER}/kinematic_grid_data_v{MAJOR_MINOR_NUMBER}.csv",
+    index = False)
 
 print(f"[INFO]: Saved {len(kinematic_grid_data)} rows.")
 print(f"[INFO]: Attempted {total_settings} total kinematic settings.")
