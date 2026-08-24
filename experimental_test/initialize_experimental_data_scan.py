@@ -12,6 +12,8 @@ print("[INFO]: Script began running!")
 # Libraries
 #################################################################################
 
+import yaml
+
 import pandas as pd
 import gepard as g
 from gepard.fits import th_KM15
@@ -30,17 +32,29 @@ SCRATCH_PATH = 'placeholder!'
 # Version numbers!
 #################################################################################
 
-VERSION_NUMBER = 1
-MINOR_NUMBER = 1
-MAJOR_MINOR_NUMBER = f"{VERSION_NUMBER}_{MINOR_NUMBER}"
+with open("./../closure_test/closure_test_config.yml", "r") as file:
+    config = yaml.safe_load(file)
+
+MAJOR_NUMBER = config["versioning"]["major"]
+MINOR_NUMBER = config["versioning"]["minor"]
+MAJOR_MINOR_NUMBER = f"{MAJOR_NUMBER}_{MINOR_NUMBER}"
 
 print(f"[INFO]: We are saving figures and data with the following appendage: {MAJOR_MINOR_NUMBER}")
+
+IS_CFF_REAL_H_FREE = config["cff_config"]["enable_cff_real_h"]
+IS_CFF_IMAG_H_FREE = config["cff_config"]["enable_cff_imag_h"]
+IS_CFF_REAL_HT_FREE = config["cff_config"]["enable_cff_real_ht"]
+IS_CFF_IMAG_HT_FREE = config["cff_config"]["enable_cff_imag_ht"]
+IS_CFF_REAL_E_FREE = config["cff_config"]["enable_cff_real_e"]
+IS_CFF_IMAG_E_FREE = config["cff_config"]["enable_cff_imag_e"]
+IS_CFF_REAL_ET_FREE = config["cff_config"]["enable_cff_real_et"]
+IS_CFF_IMAG_ET_FREE = config["cff_config"]["enable_cff_imag_et"]
 
 #################################################################################
 # Now, we find which gepard sets contain valid kinematics *and* observables!
 #################################################################################
 
-target_observables = {'XGAMMA', 'XUU', 'AC', 'ALU', 'AUL'}
+target_observables = {'XUU', 'ALU', }
 
 # dictionary of string-to-list key-value pairs:
 desired_observable_dictionary = {observable: [] for observable in target_observables}
@@ -90,14 +104,14 @@ for observable_key, experiment_ids in desired_observable_dictionary.items():
             if all(hasattr(datapoint, attr) for attr in ["in1energy", "xB", "Q2", "t", "phi"]):
             
                 # predict KM15 CFFs using Gepard's KM15:
-                km15_real_h = th_KM15.ReH(datapoint)
-                km15_imag_h = th_KM15.ImH(datapoint)
-                km15_real_e = th_KM15.ReE(datapoint)
-                km15_imag_e = th_KM15.ImE(datapoint)
-                km15_real_ht = th_KM15.ReHt(datapoint)
-                km15_imag_ht = th_KM15.ImHt(datapoint)
-                km15_real_et = th_KM15.ReEt(datapoint)
-                km15_imag_et = th_KM15.ImEt(datapoint)
+                km15_real_h = th_KM15.ReH(datapoint) if IS_CFF_REAL_H_FREE else 0.0
+                km15_imag_h = th_KM15.ImH(datapoint) if IS_CFF_IMAG_H_FREE else 0.0
+                km15_real_e = th_KM15.ReE(datapoint) if IS_CFF_REAL_HT_FREE else 0.0
+                km15_imag_e = th_KM15.ImE(datapoint) if IS_CFF_IMAG_HT_FREE else 0.0
+                km15_real_ht = th_KM15.ReHt(datapoint) if IS_CFF_REAL_E_FREE else 0.0
+                km15_imag_ht = th_KM15.ImHt(datapoint) if IS_CFF_IMAG_E_FREE else 0.0
+                km15_real_et = th_KM15.ReEt(datapoint) if IS_CFF_REAL_ET_FREE else 0.0
+                km15_imag_et = th_KM15.ImEt(datapoint) if IS_CFF_IMAG_ET_FREE else 0.0
 
                 # initialize a BKM10 computation hub:
                 km15_bkm10_cross_section = DifferentialCrossSection(
