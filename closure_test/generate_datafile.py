@@ -325,7 +325,7 @@ if IS_UNP_BEAM_LP_TARGET_XSEC_INCLUDED:
         lepton_helicity = 0.0,
         target_polarization = +0.5).real
 else:
-    bkm10_minus_beam_unp_target_km15 = np.zeros_like(phi_array_in_radians)
+    bkm10_unp_beam_lp_target_km15 = np.zeros_like(phi_array_in_radians)
 
 print(f"[INFO]: Did we include sigma(0, +1/2)? {IS_UNP_BEAM_LP_TARGET_XSEC_INCLUDED}")
 
@@ -366,7 +366,7 @@ if IS_UNP_TARGET_BSA_INCLUDED:
         phi_array_in_radians,
         target_polarization = 0.0).real
 else:
-    bkm10_minus_beam_lp_target_km15 = np.zeros_like(phi_array_in_radians)
+    bkm10_bsa_km15 = np.zeros_like(phi_array_in_radians)
 
 print(f"[INFO]: Did we include BSA(0)? {IS_UNP_TARGET_BSA_INCLUDED}")
 
@@ -381,7 +381,7 @@ if IS_PLUS_TARGET_BSA_INCLUDED:
 else:
     bkm10_plus_lp_bsa_km15 = np.zeros_like(phi_array_in_radians)
 
-print(f"[INFO]: Did we include BSA(+1/2)? {IS_UNP_TARGET_BSA_INCLUDED}")
+print(f"[INFO]: Did we include BSA(+1/2)? {IS_PLUS_TARGET_BSA_INCLUDED}")
 
 ####################################################################################################
 # BSA(Lambda = -1/2)
@@ -394,7 +394,7 @@ if IS_MINUS_TARGET_BSA_INCLUDED:
 else:
     bkm10_minus_lp_bsa_km15 = np.zeros_like(phi_array_in_radians)
 
-print(f"[INFO]: Did we include BSA(-1/2)? {IS_UNP_TARGET_BSA_INCLUDED}")
+print(f"[INFO]: Did we include BSA(-1/2)? {IS_MINUS_TARGET_BSA_INCLUDED}")
 
 ####################################################################################################
 # TSA(lambda = 0.0)
@@ -466,7 +466,7 @@ for phi_index, phi_value in enumerate(phi_array_in_radians):
         "x_b": fixed_x_bjorken,
         "t": fixed_t,
         "phi": phi_value,
-        ####### IMPORTANT! Using BKM10(KM15) VALUES! #######
+        ####### IMPORTANT! Using KM15 VALUES! #######
         "unp_beam_unp_target_xsec": bkm10_unp_beam_unp_target_km15[phi_index],
         "plus_beam_unp_target_xsec": bkm10_plus_beam_unp_target_km15[phi_index],
         "plus_minus_unp_target_xsec": bkm10_minus_beam_unp_target_km15[phi_index],
