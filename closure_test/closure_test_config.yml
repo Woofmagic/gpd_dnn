@@ -18,9 +18,9 @@ data_config:
   number_of_phi_points: 360
 
 dnn_config:
-  epochs: 750
-  replicas: 1
-  batch_size: 50
+  epochs: 1500
+  replicas: 10
+  batch_size: 30
   adam_learning_rate: 0.001
 
 observable_config:
