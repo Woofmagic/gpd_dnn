@@ -1,16 +1,22 @@
 
 import glob
 import gc
+import datetime
 import yaml
+import re
+import time
+from pathlib import Path
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-
+import corner
 from scipy.stats import norm
 from sklearn.model_selection import train_test_split
 import gepard as g
 from gepard.fits import th_KM15
+
 from bkm10_lib.core import DifferentialCrossSection
 from bkm10_lib.inputs import BKM10Inputs
 from bkm10_lib.cff_inputs import CFFInputs
@@ -30,10 +36,40 @@ from simultaneous_fit_dnn_config import compute_k_dot_delta
 from simultaneous_fit_dnn_config import prop_1
 from simultaneous_fit_dnn_config import prop_2
 
+from unfolded_loss import UnfoldedSimultaneousFitLoss
 from simultaneous_fit_dnn_config import bkm10_cross_section
 from simultaneous_fit_dnn_config import bkm10_bsa
 
+print(f"[INFO]: numpy version: {np.__version__}")
+print(f"[INFO]: pandas version: {pd.__version__}")
+print(f"[INFO]: tensorflow version: {tf.__version__}")
+print(f"[INFO]: gepard version: {g.__version__}")
+print(f"[INFO]: corner version: {corner.__version__}")
+
 print(f"[INFO]: Libraries imported!")
+
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    "savefig.dpi": 300,
+    "axes.labelsize": 16,
+    "xtick.direction": "in",
+    "xtick.major.size": 8.5,
+    "xtick.major.width": 1.0,
+    "xtick.minor.size": 4.5,
+    "xtick.minor.width": 1.0,
+    "xtick.minor.visible": True,
+    "xtick.top": True,
+    "ytick.direction": "in",
+    "ytick.major.size": 8.5,
+    "ytick.major.width": 1.0,
+    "ytick.minor.size": 4.5,
+    "ytick.minor.width": 1.0,
+    "ytick.minor.visible": True,
+    "ytick.right": True,
+    "xtick.labelsize": 15.0,
+    "ytick.labelsize": 15.0,
+})
 
 with open("closure_test_config.yml", "r") as file:
     config = yaml.safe_load(file)
@@ -42,10 +78,19 @@ MAJOR_NUMBER = config["versioning"]["major"]
 MINOR_NUMBER = config["versioning"]["minor"]
 MAJOR_MINOR_NUMBER = f"{MAJOR_NUMBER}_{MINOR_NUMBER}"
 
+print(f"[INFO]: Recieved major version number: {MAJOR_NUMBER}")
+print(f"[INFO]: Recieved minor version number: {MINOR_NUMBER}")
+print(f"[INFO]: Recieved total version number: {MAJOR_MINOR_NUMBER}")
+
 NUMBER_OF_EPOCHS = config["dnn_config"]["epochs"]
 NUMBER_OF_REPLICAS = config["dnn_config"]["replicas"]
 BATCH_SIZE = config["dnn_config"]["batch_size"]
 LEARNING_RATE = config["dnn_config"]["adam_learning_rate"]
+
+print(f"[INFO]: Received number of epochs (per replica): {NUMBER_OF_EPOCHS}")
+print(f"[INFO]: Received number of replicas: {NUMBER_OF_REPLICAS}")
+print(f"[INFO]: Received batch size: {BATCH_SIZE}")
+print(f"[INFO]: Received (Adam) learning rate value: {LEARNING_RATE}")
 
 IS_CFF_REAL_H_FREE = config["cff_config"]["enable_cff_real_h"]
 IS_CFF_IMAG_H_FREE = config["cff_config"]["enable_cff_imag_h"]
@@ -74,18 +119,67 @@ IS_MINUS_BEAM_TSA_INCLUDED = config["observable_config"]["enable_minus_beam_tsa"
 
 IS_DSA_INCLUDED = config["observable_config"]["enable_dsa"]
 
-print(f"[INFO]: Recieved major version number: {MAJOR_NUMBER}")
-print(f"[INFO]: Recieved minor version number: {MINOR_NUMBER}")
-print(f"[INFO]: Recieved total version number: {MAJOR_MINOR_NUMBER}")
+enabled_observables = []
 
-print(f"[INFO]: Received number of epochs (per replica): {NUMBER_OF_EPOCHS}")
-print(f"[INFO]: Received number of replicas: {NUMBER_OF_REPLICAS}")
-print(f"[INFO]: Received batch size: {BATCH_SIZE}")
-print(f"[INFO]: Received (Adam) learning rate value: {LEARNING_RATE}")
+if IS_UNP_BEAM_UNP_TARGET_XSEC_INCLUDED:
+    enabled_observables.append("unp_beam_unp_target_xsec")
 
-STARTING_PHI_VALUE_IN_DEGREES = 0
-ENDING_PHI_VALUE_IN_DEGREES = 360
-NUMBER_OF_PHI_POINTS = 360 + 1
+if IS_PLUS_BEAM_UNP_TARGET_XSEC_INCLUDED:
+    enabled_observables.append("plus_beam_unp_target_xsec")
+
+if IS_MINUS_BEAM_UNP_TARGET_XSEC_INCLUDED:
+    enabled_observables.append("minus_beam_unp_target_xsec")
+
+if IS_UNP_BEAM_LP_TARGET_XSEC_INCLUDED:
+    enabled_observables.append("unp_beam_lp_target_xsec")
+
+if IS_PLUS_BEAM_LP_TARGET_XSEC_INCLUDED:
+    enabled_observables.append("plus_beam_lp_target_xsec")
+
+if IS_MINUS_BEAM_LP_TARGET_XSEC_INCLUDED:
+    enabled_observables.append("minus_beam_lp_target_xsec")
+
+if IS_UNP_TARGET_BSA_INCLUDED:
+    enabled_observables.append("unp_target_bsa")
+
+if IS_PLUS_TARGET_BSA_INCLUDED:
+    enabled_observables.append("plus_lp_target_bsa")
+
+if IS_MINUS_TARGET_BSA_INCLUDED:
+    enabled_observables.append("minus_lp_target_bsa")
+
+if IS_UNP_BEAM_TSA_INCLUDED:
+    enabled_observables.append("unp_beam_tsa")
+
+if IS_PLUS_BEAM_TSA_INCLUDED:
+    enabled_observables.append("plus_beam_tsa")
+
+if IS_MINUS_BEAM_TSA_INCLUDED:
+    enabled_observables.append("minus_beam_tsa")
+
+if IS_DSA_INCLUDED:
+    enabled_observables.append("dsa")
+
+OBSERVABLE_WEIGHTS = [
+    0.5,
+    0.5,
+]
+
+base_directory = Path('./local') / f"version_{MAJOR_MINOR_NUMBER}"
+
+data_directory = base_directory / "data"
+plots_directory = base_directory / "plots"
+replica_directory = base_directory / "replica"
+learning_curves_directory = base_directory / "learning_curves"
+
+data_directory.mkdir(parents = True, exist_ok = True)
+plots_directory.mkdir(parents = True, exist_ok = True)
+replica_directory.mkdir(parents = True, exist_ok = True)
+learning_curves_directory.mkdir(parents = True, exist_ok = True)
+
+STARTING_PHI_VALUE_IN_DEGREES = config["data_config"]["start_value_of_phi_in_degrees"]
+ENDING_PHI_VALUE_IN_DEGREES = config["data_config"]["end_value_of_phi_in_degrees"]
+NUMBER_OF_PHI_POINTS = config["data_config"]["number_of_phi_points"] + 1
 
 phi_array_in_degrees = np.linspace(
     start = STARTING_PHI_VALUE_IN_DEGREES,
@@ -102,6 +196,13 @@ FIXED_K = 5.750
 FIXED_XB = 0.360
 FIXED_T = -0.17
 FIXED_Q_SQUARED = 2.300
+TEST_LEPTON_HELICITY = 0.0
+TEST_TARGET_POLARIZATION = 0.0
+
+print(f"[INFO]: Received k = {FIXED_K} GeV")
+print(f"[INFO]: Received xB = {FIXED_XB}")
+print(f"[INFO]: Received t = {FIXED_T} GeV^2")
+print(f"[INFO]: Received Q^2 = {FIXED_Q_SQUARED} GeV^2")
 
 try:
     # [NOTE]: We actually don't need to be super accurate here because we ONLY use
@@ -127,13 +228,21 @@ imag_et_values = np.array([th_KM15.ImEt(datapoint) for datapoint in test_datapoi
 
 # here we actually set the KM15 values to 0:
 CFF_REAL_H_KM15 = real_h_values[0] if IS_CFF_REAL_H_FREE else 0.0
+print(f"[INFO]: Setting Re[H] = {CFF_REAL_H_KM15}")
 CFF_IMAG_H_KM15 = imag_h_values[0] if IS_CFF_IMAG_H_FREE else 0.0
+print(f"[INFO]: Setting Im[H] = {CFF_IMAG_H_KM15}")
 CFF_REAL_HT_KM15 = real_ht_values[0] if IS_CFF_REAL_HT_FREE else 0.0
+print(f"[INFO]: Setting Re[Ht] = {CFF_REAL_HT_KM15}")
 CFF_IMAG_HT_KM15 = imag_ht_values[0] if IS_CFF_IMAG_HT_FREE else 0.0
+print(f"[INFO]: Setting Im[Ht] = {CFF_IMAG_HT_KM15}")
 CFF_REAL_E_KM15 = real_e_values[0] if IS_CFF_REAL_E_FREE else 0.0
+print(f"[INFO]: Setting Re[E] = {CFF_REAL_E_KM15}")
 CFF_IMAG_E_KM15 = imag_e_values[0] if IS_CFF_IMAG_E_FREE else 0.0
+print(f"[INFO]: Setting Im[E] = {CFF_IMAG_E_KM15}")
 CFF_REAL_ET_KM15 = real_et_values[0] if IS_CFF_REAL_ET_FREE else 0.0
+print(f"[INFO]: Setting Re[Et] = {CFF_REAL_ET_KM15}")
 CFF_IMAG_ET_KM15 = imag_et_values[0] if IS_CFF_IMAG_ET_FREE else 0.0
+print(f"[INFO]: Setting Im[Et] = {CFF_IMAG_ET_KM15}")
 
 CFF_H_KM15 = complex(CFF_REAL_H_KM15, CFF_IMAG_H_KM15)
 CFF_H_TILDE_KM15 = complex(CFF_REAL_HT_KM15, CFF_IMAG_HT_KM15)
@@ -175,9 +284,158 @@ bkm10_unp_beam_unp_target_km15 = km15_cross_section.compute_cross_section(
     lepton_helicity = 0.0,
     target_polarization = 0.0).real
 
+bkm10_plus_beam_unp_target_km15 = km15_cross_section.compute_cross_section(
+    phi_array_in_radians,
+    lepton_helicity = +1.0,
+    target_polarization = 0.0).real
+
+bkm10_minus_beam_unp_target_km15 = km15_cross_section.compute_cross_section(
+    phi_array_in_radians,
+    lepton_helicity = -1.0,
+    target_polarization = 0.0).real
+
+bkm10_unp_beam_lp_target_km15 = km15_cross_section.compute_cross_section(
+    phi_array_in_radians,
+    lepton_helicity = 0.0,
+    target_polarization = +0.5).real
+
+bkm10_plus_beam_lp_target_km15 = km15_cross_section.compute_cross_section(
+    phi_array_in_radians,
+    lepton_helicity = +1.0,
+    target_polarization = +0.5).real
+
+bkm10_minus_beam_lp_target_km15 = km15_cross_section.compute_cross_section(
+    phi_array_in_radians,
+    lepton_helicity = -1.0,
+    target_polarization = +0.5).real
+
 bkm10_bsa_km15 = km15_cross_section.compute_bsa(
     phi_array_in_radians,
     target_polarization = 0.0).real
+
+bkm10_bsa_plus_lp_target_km15 = km15_cross_section.compute_bsa(
+    phi_array_in_radians,
+    target_polarization = +0.5).real
+
+bkm10_bsa_minus_lp_target_km15 = km15_cross_section.compute_bsa(
+    phi_array_in_radians,
+    target_polarization = -0.5).real
+
+def plot_bkm10_observable(
+    x_data, y_data,
+    y_label, title,
+    observable_label,
+    figure_filename):
+    
+    figure, axis = plt.subplots(1, figsize = (10, 10))
+
+    axis.scatter(
+        x_data,
+        y_data,
+        s = 4.0,
+        color = "blue",
+        label = observable_label
+    )
+
+    axis.set_xlabel(
+        r"$\phi$ [radians]",
+        fontsize = 20.)
+    
+    axis.set_ylabel(
+        y_label,
+        fontsize = 20.)
+    
+    axis.set_title(
+        title,
+        fontsize = 16.)
+
+    axis.legend(
+        fontsize = 20.)
+    
+    axis.grid(
+        visible = True,
+        alpha = 0.35)
+
+    for extension in ["png", "eps"]:
+        figure.savefig(
+            plots_directory / f"{figure_filename}.{extension}",
+            facecolor = "white"
+        )
+
+    plt.close(figure)
+
+observables_to_plot = {
+    "xsec_UU": {
+        "data": bkm10_unp_beam_unp_target_km15,
+        "label": r"BKM10 $d^{4}\sigma^{UU}(\mathcal{F}_{\textrm{KM15}})$",
+        "ylabel": r"$d^{4}\sigma$ [nb / GeV$^{4}$]",
+        "filename": "bkm10_xsec_unp_beam_unp_target_prediction",
+    },
+    "xsec_+U": {
+        "data": bkm10_plus_beam_unp_target_km15,
+        "label": r"BKM10 $d^{4}\sigma^{+U}(\mathcal{F}_{\textrm{KM15}})$",
+        "ylabel": r"$d^{4}\sigma$ [nb / GeV$^{4}$]",
+        "filename": "bkm10_xsec_plus_beam_unp_target_prediction",
+    },
+    "xsec_-U": {
+        "data": bkm10_minus_beam_unp_target_km15,
+        "label": r"BKM10 $d^{4}\sigma^{-U}(\mathcal{F}_{\textrm{KM15}})$",
+        "ylabel": r"$d^{4}\sigma$ [nb / GeV$^{4}$]",
+        "filename": "bkm10_xsec_minus_beam_unp_target_prediction",
+    },
+     "xsec_UL": {
+        "data": bkm10_unp_beam_lp_target_km15,
+        "label": r"BKM10 $d^{4}\sigma^{L}(\mathcal{F}_{\textrm{KM15}})$",
+        "ylabel": r"$d^{4}\sigma$ [nb / GeV$^{4}$]",
+        "filename": "bkm10_xsec_unp_beam_lp_target_prediction",
+    },
+    "xsec_+L": {
+        "data": bkm10_plus_beam_lp_target_km15,
+        "label": r"BKM10 $d^{4}\sigma^{L+}(\mathcal{F}_{\textrm{KM15}})$",
+        "ylabel": r"$d^{4}\sigma$ [nb / GeV$^{4}$]",
+        "filename": "bkm10_xsec_plus_beam_lp_target_prediction",
+    },
+    "xsec_-L": {
+        "data": bkm10_minus_beam_lp_target_km15,
+        "label": r"BKM10 $d^{4}\sigma^{L-}(\mathcal{F}_{\textrm{KM15}})$",
+        "ylabel": r"$d^{4}\sigma$ [nb / GeV$^{4}$]",
+        "filename": "bkm10_xsec_minus_beam_lp_target_prediction",
+    },
+    "bsa_LU": {
+        "data": bkm10_bsa_km15,
+        "label": r"BKM10 $\textrm{BSA}(\Lambda = 0)(\mathcal{F}_{\textrm{KM15}})$",
+        "ylabel": r"$\textrm{BSA}(\Lambda = 0)$ [unitless]",
+        "filename": "bkm10_bsa_lp_target_prediction",
+    },
+    "bsa_U+": {
+        "data": bkm10_bsa_plus_lp_target_km15,
+        "label": r"BKM10 $\textrm{BSA}(\Lambda = +1/2)(\mathcal{F}_{\textrm{KM15}})$",
+        "ylabel": r"$\textrm{BSA}(\Lambda = +1/2)$ [unitless]",
+        "filename": "bkm10_bsa_plus_lp_target_prediction",
+    },
+    "bsa_U-": {
+        "data": bkm10_bsa_minus_lp_target_km15,
+        "label": r"BKM10 $\textrm{BSA}(\Lambda = -1/2)(\mathcal{F}_{\textrm{KM15}})$",
+        "ylabel": r"$\textrm{BSA}(\Lambda = -1/2)$ [unitless]",
+        "filename": "bkm10_bsa_plus_lp_target_prediction",
+    },
+}
+
+for observable_name, observable in observables_to_plot.items():
+
+    plot_bkm10_observable(
+        phi_array_in_radians,
+        observable["data"],
+        y_label = observable["ylabel"],
+        title = (
+            rf"{observable_name} vs. $\phi$, "
+            f"{this_kinematic_set_title_string}"    
+            "\n"
+            f"(KM15): {km15_cff_string}"
+        ),
+        observable_label = observable["label"],
+        figure_filename = observable['filename']
+    )
 
 k = np.full(NUMBER_OF_PHI_POINTS, FIXED_K, dtype = np.float32)
 t = np.full(NUMBER_OF_PHI_POINTS, FIXED_T, dtype = np.float32)
@@ -205,6 +463,9 @@ k_dot_delta = compute_k_dot_delta(
 prop_1_values = prop_1(q2, k_dot_delta)
 prop_2_values = prop_2(q2, t, k_dot_delta)
 
+helicity = np.full(NUMBER_OF_PHI_POINTS, 0.0, dtype = np.float32)
+polarization = np.full(NUMBER_OF_PHI_POINTS, 0.0, dtype = np.float32)
+
 kinematics_and_phi = np.column_stack((t, xb, q2, phi)).astype(np.float32)
 
 physics_data = np.column_stack((
@@ -219,22 +480,38 @@ physics_data = np.column_stack((
 
     # phi-dependent stuff:
     k_dot_delta,  prop_1_values, prop_2_values,
+
+    # polarizations:
+    helicity, polarization
 )).astype(np.float32)
+
+observable_data = {
+    "unp_beam_unp_target_xsec": bkm10_unp_beam_unp_target_km15,
+    "unp_target_bsa": bkm10_bsa_km15,
+}
 
 # stack the observables to fit:
 observables = np.column_stack((
-    bkm10_unp_beam_unp_target_km15, bkm10_bsa_km15,
+    [observable_data[name] for name in enabled_observables]
 )).astype(np.float32)
+
+####################################################################################################
+# Constructing the training data
+####################################################################################################
 
 indices = np.arange(NUMBER_OF_PHI_POINTS)
 
 dnn_inputs = np.column_stack((t, xb, q2)).astype(np.float32)
 
 training_indices, testing_indices = train_test_split(
-    indices, test_size = 0.10, random_state = 7009,)
+    indices,
+    test_size = 0.10,
+    random_state = 7009,)
 
 training_indices, validation_indices = train_test_split(
-    training_indices, test_size = 0.10, random_state = 7009,)
+    training_indices,
+    test_size = 0.10,
+    random_state = 7009,)
 
 splits = {
     "train": training_indices,
@@ -274,93 +551,66 @@ np.savez(
     testing_indices = testing_indices,
 )
 
-class SimultaneousObservablesLoss(tf.keras.losses.Loss):
-    def __init__(self, name = "simultaneous_observables_loss"):
-        super().__init__(name = name)
-
-        self._OBSERVABLE_WEIGHT_1 = 0.5 * 1.0
-        self._OBSERVABLE_WEIGHT_2 = 0.5 * 1.0
-        self._OBSERVABLE_WEIGHT_3 = 0.0 * 0.5
-        self._OBSERVABLE_WEIGHT_4 = 0.0 * 0.5
-    
-    @tf.function
-    def call(self, true_values, predicted_values):
-        
-        # the CFFs:
-        cff_h_real_tf = predicted_values[:, 0]
-        cff_h_imag_tf = predicted_values[:, 1]
-        cff_ht_real_tf = predicted_values[:, 2]
-        cff_ht_imag_tf = predicted_values[:, 3]
-
-        # kinematics_and_phi:
-        t_tf = predicted_values[:, 4]
-        xb_tf = predicted_values[:, 5]
-        q_squared_tf = predicted_values[:, 6]
-        phi_tf = predicted_values[:, 7]
-
-        # derived quantities -> form factors:
-        fe_tf = predicted_values[:, 8]
-        fg_tf = predicted_values[:, 9]
-        f1_tf = predicted_values[:, 10]
-        f2_tf = predicted_values[:, 11]
-
-        # derived quantities -> kinematics_and_phi
-        epsilon_tf = predicted_values[:, 12]
-        y_lep_tf = predicted_values[:, 13]
-        xi_tf = predicted_values[:, 14]
-        tprime_tf = predicted_values[:, 15]
-        ktilde_tf = predicted_values[:, 16]
-        k_tf  = predicted_values[:, 17]
-
-        # derived quantities -> phi-depdendent stuff:
-        kdd_tf = predicted_values[:, 18]
-        p1_tf = predicted_values[:, 19]
-        p2_tf = predicted_values[:, 20]
-
-        # observables:
-        true_cross_section = true_values[:, 0]
-        true_bsa = true_values[:, 1]
-
-        cross_section = bkm10_cross_section(
-            0.0, 0.0,
-            q_squared_tf, xb_tf, t_tf, epsilon_tf, y_lep_tf, xi_tf, k_tf, f1_tf, f2_tf, ktilde_tf, tprime_tf, phi_tf, p1_tf, p2_tf,
-            cff_h_real_tf, cff_ht_real_tf, CFF_REAL_E_KM15, CFF_REAL_ET_KM15, cff_h_imag_tf, cff_ht_imag_tf, CFF_IMAG_E_KM15, CFF_IMAG_ET_KM15)
-        
-        # compute cross-section residuals:
-        residuals_cross_section = true_cross_section - cross_section
-
-        predicted_bsa = bkm10_bsa(
-            0.0,
-            q_squared_tf, xb_tf, t_tf, epsilon_tf, y_lep_tf, xi_tf, k_tf, f1_tf, f2_tf, ktilde_tf, tprime_tf, phi_tf, p1_tf, p2_tf,
-            cff_h_real_tf, cff_ht_real_tf, CFF_REAL_E_KM15, CFF_REAL_ET_KM15, cff_h_imag_tf, cff_ht_imag_tf, CFF_IMAG_E_KM15, CFF_IMAG_ET_KM15)
-        
-        # compute BSA residuals:
-        residuals_bsa = true_bsa - predicted_bsa
-
-        # compute the MSE:
-        mean_squared_error = (
-            self._OBSERVABLE_WEIGHT_1 * tf.reduce_mean(tf.square(residuals_cross_section))+
-            self._OBSERVABLE_WEIGHT_2 * tf.reduce_mean(tf.square(residuals_bsa)))
-
-        return mean_squared_error
-
 def cff_h_model():
 
-    kinematics_inputs = tf.keras.Input(shape = (3,), name = "input_values")
-    physics_input = tf.keras.Input(shape = (17,), name = "precomputed_physics")
-    dnn_kinematic_inputs = tf.keras.layers.Lambda(lambda x: x[:, :3], name = "input_kinematics")(kinematics_inputs)
-    hidden = tf.keras.layers.Dense(10, kernel_initializer = "he_normal", activation = "relu")(dnn_kinematic_inputs)
-    hidden = tf.keras.layers.Dense(10, kernel_initializer = "he_normal", activation = "relu")(hidden)
-    hidden = tf.keras.layers.Dense(10, kernel_initializer = "he_normal", activation = "relu")(hidden)
-    hidden = tf.keras.layers.Dense(10, kernel_initializer = "he_normal", activation = "relu")(hidden)
+    kinematics_inputs = tf.keras.Input(
+        shape = (3,),
+        name = "input_values")
+    
+    physics_input = tf.keras.Input(
+        shape = (19,),
+        name = "precomputed_physics")
+    
+    dnn_kinematic_inputs = tf.keras.layers.Lambda(
+        lambda x: x[:, :3],
+        name = "input_kinematics")(kinematics_inputs)
+    
+    hidden = tf.keras.layers.Dense(
+        10,
+        kernel_initializer = "he_normal",
+        activation = "relu")(dnn_kinematic_inputs)
+    
+    hidden = tf.keras.layers.Dense(
+        10,
+        kernel_initializer = "he_normal",
+        activation = "relu")(hidden)
+    
+    hidden = tf.keras.layers.Dense(
+        10,
+        kernel_initializer = "he_normal",
+        activation = "relu")(hidden)
+    
+    hidden = tf.keras.layers.Dense(
+        10,
+        kernel_initializer = "he_normal",
+        activation = "relu")(hidden)
+    
     # Re[H], Im[H], Re[Ht], Im[Ht], Re[E], Im[E], Re[Et], Im[Et]
-    cff_outputs = tf.keras.layers.Dense(8, activation = "linear", name = "cff_h_htilde")(hidden)
-    full_model_outputs = tf.keras.layers.Concatenate(name = "physics_and_cffs")([cff_outputs, physics_input])
-    model = tf.keras.Model(inputs = [kinematics_inputs, physics_input], outputs = full_model_outputs)
+    cff_outputs = tf.keras.layers.Dense(
+        8,
+        activation = "linear",
+        name = "cff_outputs")(hidden)
+    
+    full_model_outputs = tf.keras.layers.Concatenate(
+        name = "physics_and_cffs")([
+            cff_outputs,
+            physics_input])
+    
+    model = tf.keras.Model(
+        inputs = [
+            kinematics_inputs,
+            physics_input
+            ],
+        outputs = full_model_outputs)
 
     model.compile(
-        optimizer = tf.keras.optimizers.Adam(learning_rate = LEARNING_RATE),
-        loss = SimultaneousObservablesLoss(),
+        optimizer = tf.keras.optimizers.Adam(
+            learning_rate = LEARNING_RATE
+            ),
+        loss = UnfoldedSimultaneousFitLoss(
+            enabled_observables = enabled_observables,
+            observable_weights = OBSERVABLE_WEIGHTS
+        ),
         jit_compile = True,
         )
     
@@ -368,14 +618,14 @@ def cff_h_model():
     return model
 
 for replica in range(NUMBER_OF_REPLICAS):
-
-    tf.keras.backend.clear_session()
-    gc.collect()
-
+    
     replica_number = replica + 1
 
+    start_dnn_compile_time = time.perf_counter()
     dnn_model = cff_h_model()
+    print(f"[TIMING]: model construction time: {time.perf_counter() - start_dnn_compile_time:.2f} s")
 
+    start_dnn_fitting_time = time.perf_counter()
     dnn_model_history = dnn_model.fit(
         x = {
             "input_values": x_training,
@@ -391,43 +641,127 @@ for replica in range(NUMBER_OF_REPLICAS):
         ),
         epochs = NUMBER_OF_EPOCHS,
         batch_size = BATCH_SIZE,
-        verbose = 1
-        )
+        verbose = 0
+    )
+    print(f"[TIMING]: fitting time: {time.perf_counter() - start_dnn_fitting_time:.2f} s")
 
     number_of_epochs_run = len(dnn_model_history.epoch)
-    print(f"The model ran for {number_of_epochs_run} epochs before early stopping.")
+    print(f"[INFO]: The model ran for {number_of_epochs_run} epochs before early stopping.")
 
-    dnn_model.save(f"./local/version_{MAJOR_MINOR_NUMBER}/replicas/replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.keras")
+    start_dnn_save_time = time.perf_counter()
+    dnn_model.save(
+        replica_directory /
+        f"replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.keras"
+        )
+    print(f"[TIMING]: DNN saving time: {time.perf_counter() - start_dnn_save_time:.2f} s")
 
     training_loss_data = dnn_model_history.history["loss"]
     validation_loss_data = dnn_model_history.history["val_loss"]
 
+    start_dnn_evaluation_time = time.perf_counter()
     dnn_evaluation_statistics = dnn_model.evaluate(
         x = {
             "input_values": x_testing,
-            "precomputed_physics": precomputed_physics_testing,
-        },
+            "precomputed_physics": precomputed_physics_testing
+            },
         y = y_testing,
         verbose = 0)
-    
+    print(f"[TIMING]: DNN evaluation time: {time.perf_counter() - start_dnn_evaluation_time:.2f} s")
     print(f"[INFO]: Test Loss for Replica {replica_number}: {dnn_evaluation_statistics}")
 
     # make DF with testing metrics:
     pd.DataFrame({
         'testing_loss': [dnn_evaluation_statistics], # https://stackoverflow.com/a/17840195 -> for why we need to cast it into a list!
     }).to_csv(
-        f"./local/version_{MAJOR_MINOR_NUMBER}/replicas/replica_{replica_number}_loss_data.csv", 
+        replica_directory /
+        f"replica_{replica_number}_loss_data.csv",
         index = False)
 
     # save npz with DNN training information:
     np.savez(
-        file = f"./local/version_{MAJOR_MINOR_NUMBER}/replicas/replica_{replica_number}_losses_vs_epochs.npz",
+        file = replica_directory / f"replica_{replica_number}_losses_vs_epochs.npz",
         training_loss = training_loss_data,
         validation_loss = validation_loss_data
         )
 
-    # cleanup
+    # make DF with DNN training information
+    pd.DataFrame(dnn_model_history.history).to_csv(
+        replica_directory / f"replica_{replica_number}_losses_vs_epochs.csv",
+        index = False)
+
+    predicted_outputs = dnn_model.predict(
+        {
+            "input_values": dnn_inputs,
+            "precomputed_physics": physics_data,
+        },
+        verbose = 0
+    )
+
+    cff_predictions = predicted_outputs[:, :8]
+
+    cff_h_real = cff_predictions[:, 0]
+    cff_h_imag = cff_predictions[:, 1]
+    cff_ht_real = cff_predictions[:, 2]
+    cff_ht_imag = cff_predictions[:, 3]
+    cff_e_real = cff_predictions[:, 4]
+    cff_e_imag = cff_predictions[:, 5]
+    cff_et_real = cff_predictions[:, 6]
+    cff_et_imag = cff_predictions[:, 7]
+
+    fe = compute_fe(t)
+    fg = compute_fg(fe)
+    f2 = compute_f2(t, fe, fg)
+    f1 = compute_f1(fg, f2)
+    epsilon = compute_epsilon(xb, q2)
+    y_lep = compute_y(FIXED_K, q2, epsilon)
+    xi = compute_skewness(xb, t, q2)
+    tmin = compute_t_min(xb, q2, epsilon)
+    tprime = compute_t_prime(t, tmin)
+    k_tilde = compute_k_tilde(xb, q2, t, t_min, epsilon)
+    kinematic_k = compute_k(q2, y, epsilon, k_tilde)
+    kdd = compute_k_dot_delta(q2, xb, t, phi, epsilon, y, kinematic_k)
+    p1 = prop_1(q2, kdd)
+    p2 = prop_2(q2, t, kdd)
+    cross_section_prediction = bkm10_cross_section(
+        TEST_LEPTON_HELICITY, TEST_TARGET_POLARIZATION,
+        q2, xb, t, epsilon, y_lep, xi, k, f1, f2, k_tilde, tprime, phi, p1, p2,
+        cff_h_real, cff_ht_real, cff_e_real, cff_et_real, cff_h_imag, cff_ht_imag, cff_e_imag, cff_et_imag)
+
+    bsa_prediction = bkm10_bsa(
+        TEST_TARGET_POLARIZATION,
+        q2, xb, t, epsilon, y_lep, xi, k, f1, f2, k_tilde, tprime, phi, p1, p2,
+        cff_h_real, cff_ht_real, cff_e_real, cff_et_real, cff_h_imag, cff_ht_imag, cff_e_imag, cff_et_imag)
+
+    np.savez(
+        file = replica_directory / f"replica_{replica_number}_predictions.npz",
+        t = t,
+        xb = xb,
+        q_squared = q2,
+        phi = phi,
+
+        cff_h_real = cff_predictions[:, 0],
+        cff_h_imag = cff_predictions[:, 1],
+        cff_ht_real = cff_predictions[:, 2],
+        cff_ht_imag = cff_predictions[:, 3],
+        cff_e_real = cff_predictions[:, 4],
+        cff_e_imag = cff_predictions[:, 5],
+        cff_et_real = cff_predictions[:, 6],
+        cff_et_imag = cff_predictions[:, 7],
+
+        cross_section = cross_section_prediction,
+        bsa = bsa_prediction,
+    )
+
+
+    # [INFO]: this is called an "aggressive" memory cleanup:
     del dnn_model
+    del dnn_model_history
+    del training_loss_data
+    del validation_loss_data
+    del dnn_evaluation_statistics
+
+    gc.collect()
+    tf.keras.backend.clear_session()
 
 loss_files = sorted(glob.glob(f"./local/version_{MAJOR_MINOR_NUMBER}/replicas/replica_*_losses_vs_epochs.npz"))
 
@@ -478,130 +812,185 @@ for replica_index, loss_file in enumerate(loss_files, start = 1):
     log_curves_ax.set_ylabel("Log MSE Loss", fontsize = 15)
     log_curves_ax.set_title(f"Replica {replica_index} Learning Curves\n(Eval. Loss $= {testing_loss:.3g}$", fontsize = 15.)
 
-    curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/lc_replica_{replica_index}_v{MAJOR_MINOR_NUMBER}.png")
-    curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/lc_replica_{replica_index}_v{MAJOR_MINOR_NUMBER}.eps")
+    for extension in ['png', 'eps']:
+        curves_fig.savefig(
+            learning_curves_directory /
+            f"lc_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.{extension}",
+            facecolor = 'white')
 
-    log_curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/log_lc_replica_{replica_index}_v{MAJOR_MINOR_NUMBER}.png")
-    log_curves_fig.savefig(f"./local/version_{MAJOR_MINOR_NUMBER}/learning_curves/log_lc_replica_{replica_index}_v{MAJOR_MINOR_NUMBER}.eps")
-
+        log_curves_fig.savefig(
+            learning_curves_directory /
+            f"log_lc_replica_{replica_number}_v{MAJOR_MINOR_NUMBER}.{extension}",
+            facecolor = 'white')
     plt.close(curves_fig)
     plt.close(log_curves_fig)
 
     del curves_fig
     del log_curves_fig
 
-range_of_t = np.linspace(x_training["t"].min(), x_training["t"].max())
-range_of_x_b = np.linspace(x_training["x_b"].min(), x_training["x_b"].max())
-range_of_q_squared = np.linspace(x_training["q_squared"].min(), x_training["q_squared"].max())
+range_of_t = np.linspace(x_training.min(), x_training.max())
+range_of_x_b = np.linspace(x_training.min(), x_training.max())
+range_of_q_squared = np.linspace(x_training.min(), x_training.max())
 
-replica_paths = sorted(glob.glob(f"./local/version_{MAJOR_MINOR_NUMBER}/replicas/replica_*_v{MAJOR_MINOR_NUMBER}.keras"))
+replica_paths = sorted(
+    replica_directory.glob(f"replica_*_v{MAJOR_MINOR_NUMBER}.keras")
+)
+
 replicas = [tf.keras.models.load_model(
     path,
     compile = False,
     safe_mode = False) for path in replica_paths]
+
 print(f"[INFO]: Loaded {len(replicas)} replica models.")
 
-all_predictions = []
-
-for replica in replicas:
-    
-    predicted_outputs = replica.predict(
-        {
-            "input_values": dnn_inputs,
-            "precomputed_physics": physics_data,
-        },
-        verbose = 0,
-    ) # predicting using x_data
-    all_predictions.append(predicted_outputs)
-
-all_predictions = np.array(all_predictions)
+assert len(replicas) == NUMBER_OF_REPLICAS, "[ASSERT]: Number of loaded replicas does not equal expected number"
 
 replicas_cross_predictions = []
 replicas_bsa_predictions = []
 
-for index, _ in enumerate(all_predictions):
+replicas_h_real = []
+replicas_h_imag = []
+replicas_ht_real = []
+replicas_ht_imag = []
+replicas_e_real = []
+replicas_e_imag = []
+replicas_et_real = []
+replicas_et_imag = []
 
-    prediction = all_predictions[index]
+for replica_index in range(1, NUMBER_OF_REPLICAS + 1):
 
-    cff_h_real = prediction[:, 0]
-    cff_h_imag = prediction[:, 1]
-    cff_ht_real = prediction[:, 2]
-    cff_ht_imag = prediction[:, 3]
+    prediction_path = (
+        replica_directory
+        / f"replica_{replica_index}_predictions.npz"
+    )
 
-    t = prediction[:, 4]
-    xb = prediction[:, 5]
-    q_squared = prediction[:, 6]
-    phi = prediction[:, 7]
+    prediction_information = np.load(prediction_path)
+    replicas_h_real.append(prediction_information["cff_h_real"])
+    replicas_h_imag.append(prediction_information["cff_h_imag"])
+    replicas_ht_real.append(prediction_information["cff_ht_real"])
+    replicas_ht_imag.append(prediction_information["cff_ht_imag"])
+    replicas_e_real.append(prediction_information["cff_e_real"])
+    replicas_e_imag.append(prediction_information["cff_e_imag"])
+    replicas_et_real.append(prediction_information["cff_et_real"])
+    replicas_et_imag.append(prediction_information["cff_et_imag"])
+    replicas_cross_predictions.append(prediction_information["cross_section"])
+    replicas_bsa_predictions.append(prediction_information["bsa"])
 
-    fe = prediction[:, 8]
-    fg = prediction[:, 9]
-    f1 = prediction[:,10]
-    f2 = prediction[:,11]
+    prediction_information.close()
 
-    epsilon = prediction[:,12]
-    y_lep = prediction[:,13]
-    xi = prediction[:,14]
-    tprime = prediction[:,15]
-    ktilde = prediction[:,16]
-    k = prediction[:,17]
+def crunch_statistics(data):
 
-    kdd = prediction[:,18]
-    p1 = prediction[:,19]
-    p2 = prediction[:,20]
+    # huge dictionary of statistics
+    statistics_dictionary = {
+        'mean': np.mean(data, axis = 0),
+        'std': np.std(data, axis = 0),
+        'median': np.median(data, axis = 0),
+        'min': np.min(data, axis = 0),
+        'max': np.max(data, axis = 0)
+    }
 
-    cross_section = bkm10_cross_section(
-        0.0, 0.0,
-        q_squared, xb, t, epsilon, y_lep, xi, k, f1, f2, ktilde, tprime, phi, p1, p2,
-        cff_h_real, CFF_REAL_HT_KM15, CFF_REAL_E_KM15, CFF_REAL_ET_KM15, cff_h_imag, CFF_IMAG_HT_KM15, CFF_IMAG_E_KM15, CFF_IMAG_ET_KM15)
+    for percentile in range(10, 50, 10):
+        statistics_dictionary[f'p{percentile}'] = np.percentile(data, percentile, axis = 0)
+        statistics_dictionary[f'p{100 - percentile}'] = np.percentile(data, 100 - percentile, axis = 0)
 
-    predicted_bsa = bkm10_bsa(
-        0.0,
-        q_squared, xb, t, epsilon, y_lep, xi, k, f1, f2, ktilde, tprime, phi, p1, p2,
-        cff_h_real, CFF_REAL_HT_KM15, CFF_REAL_E_KM15, CFF_REAL_ET_KM15, cff_h_imag, CFF_IMAG_HT_KM15, CFF_IMAG_E_KM15, CFF_IMAG_ET_KM15)
+    return statistics_dictionary
 
-    replicas_cross_predictions.append(cross_section)
-    replicas_bsa_predictions.append(predicted_bsa)
+# observable statistics:
+xs_stats = crunch_statistics(replicas_cross_predictions)
+bsa_stats = crunch_statistics(replicas_bsa_predictions)
 
-replicas_cross_predictions = np.array(replicas_cross_predictions)
-replicas_bsa_predictions = np.array(replicas_bsa_predictions)
+replica_statistics_dataframe = pd.DataFrame({
+    'k': FIXED_K,
+    't': FIXED_T,
+    'xb': FIXED_XB,
+    'q_squared': FIXED_Q_SQUARED,
+    'phi': phi_array_in_degrees,
 
-mean_xs = np.mean(replicas_cross_predictions, axis = 0)
-std_dev_xs = np.std(replicas_cross_predictions, axis = 0)
+    # TRUE CFF VALUES:
+    "Re[H]": CFF_REAL_H_KM15, "Im[H]": CFF_IMAG_H_KM15,
+    "Re[E]": CFF_REAL_E_KM15, "Im[E]": CFF_IMAG_E_KM15,
+    "Re[Ht]": CFF_REAL_HT_KM15, "Im[Ht]": CFF_IMAG_HT_KM15,
+    "Re[Et]": CFF_REAL_ET_KM15, "Im[Et]": CFF_IMAG_ET_KM15,
 
-xs_mean = np.mean(replicas_cross_predictions, axis = 0)
-xs_min = np.min(replicas_cross_predictions, axis = 0)
-xs_max = np.max(replicas_cross_predictions, axis = 0)
-xs_q1 = np.percentile(replicas_cross_predictions, 25, axis = 0)
-xs_q3 = np.percentile(replicas_cross_predictions, 75, axis = 0)
+    # cross-section
+    'mean_xs': xs_stats['mean'],
+    'std_xs': xs_stats['std'],
+    'min_xs': xs_stats['min'],
+    'max_xs': xs_stats['max'],
+    'p10_xs': xs_stats['p10'], 'p20_xs': xs_stats['p20'], 'p30_xs': xs_stats['p30'], 'p40_xs': xs_stats['p40'],
+    'p60_xs': xs_stats['p60'], 'p70_xs': xs_stats['p70'], 'p80_xs': xs_stats['p80'], 'p90_xs': xs_stats['p90'],
+    
+    # BSA
+    'mean_bsa': bsa_stats['mean'],
+    'std_bsa': bsa_stats['std'],
+    'min_bsa': bsa_stats['min'],
+    'max_bsa': bsa_stats['max'],
+    'p10_bsa': bsa_stats['p10'], 'p20_bsa': bsa_stats['p20'], 'p30_bsa': bsa_stats['p30'], 'p40_bsa': bsa_stats['p40'],
+    'p60_bsa': bsa_stats['p60'], 'p70_bsa': bsa_stats['p70'], 'p80_bsa': bsa_stats['p80'], 'p90_bsa': bsa_stats['p90']
+})
 
-xs_percentile_10 = np.percentile(replicas_cross_predictions, 10, axis = 0)
-xs_percentile_20 = np.percentile(replicas_cross_predictions, 20, axis = 0)
-xs_percentile_30 = np.percentile(replicas_cross_predictions, 30, axis = 0)
-xs_percentile_40 = np.percentile(replicas_cross_predictions, 40, axis = 0)
-xs_median = np.percentile(replicas_cross_predictions, 50, axis = 0)
-xs_percentile_60 = np.percentile(replicas_cross_predictions, 60, axis = 0)
-xs_percentile_70 = np.percentile(replicas_cross_predictions, 70, axis = 0)
-xs_percentile_80 = np.percentile(replicas_cross_predictions, 80, axis = 0)
-xs_percentile_90 = np.percentile(replicas_cross_predictions, 90, axis = 0)
+replica_statistics_dataframe.to_csv(
+    data_directory / f"observable_preds_v{MAJOR_MINOR_NUMBER}.csv", 
+    index = False)
 
-mean_bsa = np.mean(replicas_bsa_predictions, axis = 0)
-std_dev_bsa = np.std(replicas_bsa_predictions, axis = 0)
+cff_h_real_pred_per_replica = np.mean(
+    replicas_h_real,
+    axis = 1
+)
 
-bsa_mean = np.mean(replicas_bsa_predictions, axis = 0)
-bsa_min = np.min(replicas_bsa_predictions, axis = 0)
-bsa_max = np.max(replicas_bsa_predictions, axis = 0)
-bsa_q1 = np.percentile(replicas_bsa_predictions, 25, axis = 0)
-bsa_q3 = np.percentile(replicas_bsa_predictions, 75, axis = 0)
+cff_h_imag_pred_per_replica = np.mean(
+    replicas_h_imag,
+    axis = 1
+)
 
-bsa_percentile_10 = np.percentile(replicas_bsa_predictions, 10, axis = 0)
-bsa_percentile_20 = np.percentile(replicas_bsa_predictions, 20, axis = 0)
-bsa_percentile_30 = np.percentile(replicas_bsa_predictions, 30, axis = 0)
-bsa_percentile_40 = np.percentile(replicas_bsa_predictions, 40, axis = 0)
-bsa_median = np.percentile(replicas_bsa_predictions, 50, axis = 0)
-bsa_percentile_60 = np.percentile(replicas_bsa_predictions, 60, axis = 0)
-bsa_percentile_70 = np.percentile(replicas_bsa_predictions, 70, axis = 0)
-bsa_percentile_80 = np.percentile(replicas_bsa_predictions, 80, axis = 0)
-bsa_percentile_90 = np.percentile(replicas_bsa_predictions, 90, axis = 0)
+cff_ht_real_pred_per_replica = np.mean(
+    replicas_ht_real,
+    axis = 1
+)
+
+cff_ht_imag_pred_per_replica = np.mean(
+    replicas_ht_imag,
+    axis = 1
+)
+
+cff_e_real_pred_per_replica = np.mean(
+    replicas_e_real,
+    axis = 1
+)
+
+cff_e_imag_pred_per_replica = np.mean(
+    replicas_e_imag,
+    axis = 1
+)
+
+cff_et_real_pred_per_replica = np.mean(
+    replicas_et_real,
+    axis = 1
+)
+
+cff_et_imag_pred_per_replica = np.mean(
+    replicas_et_imag,
+    axis = 1
+)
+
+replica_cffs_dataframe = pd.DataFrame({
+    "ReH_pred": cff_h_real_pred_per_replica,
+    "ImH_pred": cff_h_imag_pred_per_replica,
+
+    "ReHt_pred": cff_ht_real_pred_per_replica,
+    "ImHt_pred": cff_ht_imag_pred_per_replica,
+
+    "ReE_pred": cff_e_real_pred_per_replica,
+    "ImE_pred": cff_e_imag_pred_per_replica,
+
+    "ReEt_pred": cff_et_real_pred_per_replica,
+    "ImEt_pred": cff_et_imag_pred_per_replica,
+})
+
+replica_cffs_dataframe.to_csv(
+    data_directory /
+    f"cff_replica_average_preds_v{MAJOR_MINOR_NUMBER}.csv", 
+    index = False)
 
 fig2, ax2 = plt.subplots(1, figsize = (10, 7))
 
@@ -611,7 +1000,7 @@ ax2.scatter(
 
 ax2.plot(
     phi_array_in_radians,
-    mean_xs,
+    replica_statistics_dataframe['mean_xs'],
     label = r'Replica Average',
     color = "blue",
     linewidth = 0.5,
@@ -619,40 +1008,40 @@ ax2.plot(
 
 ax2.fill_between(
     x = phi_array_in_radians,
-    y1 = xs_max,
-    y2 = xs_min,
+    y1 = replica_statistics_dataframe['max_xs'],
+    y2 = replica_statistics_dataframe['min_xs'],
     label = r'Min/Max Bound',
     color = "lightgray",
     alpha = 0.2)
 
 ax2.fill_between(
     x = phi_array_in_radians,
-    y1 = xs_percentile_90,
-    y2 = xs_percentile_10,
+    y1 = replica_statistics_dataframe['p90_xs'],
+    y2 = replica_statistics_dataframe['p10_xs'],
     label = r'10/90 \% Bound',
     color = "gray",
     alpha = 0.25)
 
 ax2.fill_between(
     x = phi_array_in_radians,
-    y1 = xs_percentile_80,
-    y2 = xs_percentile_20,
+    y1 = replica_statistics_dataframe['p80_xs'],
+    y2 = replica_statistics_dataframe['p20_xs'],
     label = r'20/80 \% Bound',
     color = "gray",
     alpha = 0.3)
 
 ax2.fill_between(
     x = phi_array_in_radians,
-    y1 = xs_percentile_70,
-    y2 = xs_percentile_30,
+    y1 = replica_statistics_dataframe['p70_xs'],
+    y2 = replica_statistics_dataframe['p30_xs'],
     label = r'30/70 \% Bound',
     color = "gray",
     alpha = 0.35)
 
 ax2.fill_between(
     x = phi_array_in_radians,
-    y1 = xs_percentile_60,
-    y2 = xs_percentile_40,
+    y1 = replica_statistics_dataframe['p60_xs'],
+    y2 = replica_statistics_dataframe['p40_xs'],
     label = r'40/60 \% Bound',
     color = "gray",
     alpha = 0.4)
@@ -685,7 +1074,7 @@ ax3.scatter(
 
 ax3.plot(
     phi_array_in_radians,
-    mean_bsa,
+    replica_statistics_dataframe['mean_bsa'],
     label = r'Replica Average',
     color = "blue",
     linewidth = 0.5,
@@ -693,46 +1082,46 @@ ax3.plot(
 
 ax3.fill_between(
     x = phi_array_in_radians,
-    y1 = bsa_max,
-    y2 = bsa_min,
+    y1 = replica_statistics_dataframe['max_bsa'],
+    y2 = replica_statistics_dataframe['min_bsa'],
     label = r'Min/Max Bound',
     color = "lightgray",
     alpha = 0.2)
 
 ax3.fill_between(
     x = phi_array_in_radians,
-    y1 = bsa_percentile_90,
-    y2 = bsa_percentile_10,
+    y1 = replica_statistics_dataframe['p90_bsa'],
+    y2 = replica_statistics_dataframe['p10_bsa'],
     label = r'10/90 \% Bound',
     color = "gray",
     alpha = 0.25)
 
 ax3.fill_between(
     x = phi_array_in_radians,
-    y1 = bsa_percentile_80,
-    y2 = bsa_percentile_20,
+    y1 = replica_statistics_dataframe['p80_bsa'],
+    y2 = replica_statistics_dataframe['p20_bsa'],
     label = r'20/80 \% Bound',
     color = "gray",
     alpha = 0.3)
 
 ax3.fill_between(
     x = phi_array_in_radians,
-    y1 = bsa_percentile_70,
-    y2 = bsa_percentile_30,
+    y1 = replica_statistics_dataframe['p70_bsa'],
+    y2 = replica_statistics_dataframe['p30_bsa'],
     label = r'30/70 \% Bound',
     color = "gray",
     alpha = 0.35)
 
 ax3.fill_between(
     x = phi_array_in_radians,
-    y1 = bsa_percentile_60,
-    y2 = bsa_percentile_40,
+    y1 = replica_statistics_dataframe['p60_bsa'],
+    y2 = replica_statistics_dataframe['p40_bsa'],
     label = r'40/60 \% Bound',
     color = "gray",
     alpha = 0.4)
 
 ax3.set_xlabel(r"$\phi$ [radians]", fontsize = 16)
-ax3.set_ylabel(r"BSA", fontsize = 16)
+ax3.set_ylabel(r"BSA [unitless]", fontsize = 16)
 ax3.set_title(
     rf"BSA vs. $\phi$, {this_kinematic_set_title_string}"
     "\n"
@@ -750,129 +1139,143 @@ for extension in ['png', 'eps']:
 
 plt.close(fig3)
 
-cff_h_real_pred_per_replica = np.mean(all_predictions[:, :, 0], axis = 1)
-cff_h_imag_pred_per_replica = np.mean(all_predictions[:, :, 1], axis = 1)
-cff_ht_real_pred_per_replica = np.mean(all_predictions[:, :, 2], axis = 1)
-cff_ht_imag_pred_per_replica = np.mean(all_predictions[:, :, 3], axis = 1)
+def make_cff_plot_label(
+        cff_label: str
+    ):
+    """
+    I am going to customize LaTeX representation of a given CFF
+    based on the string version that I received from a datafile.
+    """
 
-cff_h_real_mean, cff_h_real_stddev = norm.fit(cff_h_real_pred_per_replica)
-cff_h_imag_mean, cff_h_imag_stddev = norm.fit(cff_h_imag_pred_per_replica)
-cff_ht_real_mean, cff_ht_real_stddev = norm.fit(cff_ht_real_pred_per_replica)
-cff_ht_imag_mean, cff_ht_imag_stddev = norm.fit(cff_ht_imag_pred_per_replica)
+    # why does this work? because the variable is a STRING
+    real_or_imag = cff_label[:2]
+    cff_name = cff_label[2:]
 
-print(f"[INFO]: Re[H] mean of {cff_h_real_mean} and stdddev of {cff_h_real_stddev}")
-print(f"[INFO]: Im[H] mean of {cff_h_imag_mean} and stdddev of {cff_h_imag_stddev}")
-print(f"[INFO]: Re[Ht] mean of {cff_ht_real_mean} and stdddev of {cff_ht_real_stddev}")
-print(f"[INFO]: Im[Ht] mean of {cff_ht_imag_mean} and stdddev of {cff_ht_imag_stddev}")
+    component = { "Re": "Re", "Im": "Im" }[real_or_imag]
 
-burner_x_values_cff_h_real = np.linspace(
-    cff_h_real_mean - 4.*cff_h_real_stddev,
-    cff_h_real_mean + 4.*cff_h_real_stddev,
-    200)
+    cff_symbol = {
+        "H": r"\mathcal{H}",
+        "Ht": r"\widetilde{\mathcal{H}}",
+        "E": r"\mathcal{E}",
+        "Et": r"\widetilde{\mathcal{E}}",
+    }[cff_name]
 
-fig4, ax4 = plt.subplots(1, 1, figsize = (10, 7))
+    return rf"{component}$[{cff_symbol}]$"
 
-ax4.hist(cff_h_real_pred_per_replica, bins = 30, alpha = 0.6, color = 'skyblue', edgecolor = 'black')
-ax4.plot(
-    burner_x_values_cff_h_real, norm.pdf(burner_x_values_cff_h_real, cff_h_real_mean, cff_h_real_stddev), 
-    color = "red", linestyle = "--", label = fr"Gaussian Fit: $\mu = {cff_h_real_mean:.3f}$, $\sigma = {cff_h_real_stddev:.3f}$")
-ax4.axvline(real_h_values[0], color = "green", linestyle = "-", linewidth = 2., label = f"KM15: {real_h_values[0]:.3f}")
+_NUMBER_OF_STDDEVS = 4.
+_NUMBER_OF_HISTOGRAM_BINS = 30
+_NUMBER_OF_GAUSSIAN_POINTS = 200
 
-ax4.set_ylabel("Frequency", rotation = 90., fontsize = 16.)
-ax4.set_xlabel(r"Re$[\mathcal{H}]$", fontsize = 16.)
-ax4.set_title(f"{this_kinematic_set_title_string}\n(KM15): {km15_cff_string}", fontsize = 16.)
+km15_values = {
+    "ReH": CFF_REAL_H_KM15,
+    "ImH": CFF_IMAG_H_KM15,
+    "ReE": CFF_REAL_E_KM15,
+    "ImE": CFF_IMAG_E_KM15,
+    "ReHt": CFF_REAL_HT_KM15,
+    "ImHt": CFF_IMAG_HT_KM15,
+    "ReEt": CFF_REAL_ET_KM15,
+    "ImEt": CFF_IMAG_ET_KM15,
+}
 
-ax4.legend()
+cff_h_km15 = complex(CFF_REAL_H_KM15, CFF_IMAG_H_KM15)
+cff_e_km15 = complex(CFF_REAL_E_KM15, CFF_IMAG_E_KM15)
+cff_ht_km15 = complex(CFF_REAL_HT_KM15, CFF_IMAG_HT_KM15)
+cff_et_km15 = complex(CFF_REAL_ET_KM15, CFF_IMAG_ET_KM15)
 
-cff_h_real_plotname = f"./local/version_{MAJOR_MINOR_NUMBER}/plots/cff_h_real_fits_v{MAJOR_MINOR_NUMBER}"
+km15_cff_string = (
+    rf"$\mathcal{{H}} = {cff_h_km15:.3f}$, "
+    rf"$\mathcal{{E}} = {cff_e_km15:.3f}$, "
+    rf"$\widetilde{{\mathcal{{H}}}} = {cff_ht_km15:.3f}$, "
+    rf"$\widetilde{{\mathcal{{E}}}} = {cff_et_km15:.3f}$"
+)
 
-for extension in ['png', 'eps']:
-    fig4.savefig(
-        f"{cff_h_real_plotname}.{extension}",
-        facecolor = 'white')
+for cff_label in km15_values:
+        
+    corresponding_key = f"{cff_label}_pred"
+
+    if corresponding_key not in replica_cffs_dataframe.columns:
+        continue
+
+    cff_prediction_per_replica = replica_cffs_dataframe[corresponding_key]
     
-plt.close(fig4)
-
-burner_x_values_cff_h_imag = np.linspace(
-    cff_h_imag_mean - 4.*cff_h_imag_stddev,
-    cff_h_imag_mean + 4.*cff_h_imag_stddev,
-    200)
-
-fig4, ax4 = plt.subplots(1, 1, figsize = (10, 7))
-
-ax4.hist(cff_h_imag_pred_per_replica, bins = 30, alpha = 0.6, color = 'skyblue', edgecolor = 'black')
-ax4.plot(
-    burner_x_values_cff_h_imag, norm.pdf(burner_x_values_cff_h_imag, cff_h_imag_mean, cff_h_imag_stddev), 
-    color = "red", linestyle = "--", label = fr"Gaussian Fit: $\mu = {cff_h_imag_mean:.3f}$, $\sigma = {cff_h_imag_stddev:.3f}$")
-ax4.axvline(imag_h_values[0], color = "green", linestyle = "-", linewidth = 2., label = f"KM15: {imag_h_values[0]:.3f}")
-
-ax4.set_ylabel("Frequency", rotation = 90., fontsize = 16.)
-ax4.set_xlabel(r"Im$[\mathcal{H}]$", fontsize = 16.)
-ax4.set_title(f"{this_kinematic_set_title_string}\n(KM15): {km15_cff_string}", fontsize = 16.)
-
-ax4.legend()
-
-cff_h_imag_plotname = f"./local/version_{MAJOR_MINOR_NUMBER}/plots/cff_h_imag_fits_v{MAJOR_MINOR_NUMBER}"
-
-for extension in ['png', 'eps']:
-    fig4.savefig(
-        f"{cff_h_imag_plotname}.{extension}",
-        facecolor = 'white')
+    cff_mean, cff_stddev = norm.fit(cff_prediction_per_replica)
     
-plt.close(fig4)
-
-burner_x_values_cff_ht_real = np.linspace(
-    cff_ht_real_mean - 4.*cff_ht_real_stddev,
-    cff_ht_real_mean + 4.*cff_ht_real_stddev,
-    200)
-
-fig4, ax4 = plt.subplots(1, 1, figsize = (10, 7))
-
-ax4.hist(cff_ht_real_pred_per_replica, bins = 30, alpha = 0.6, color = 'skyblue', edgecolor = 'black')
-ax4.plot(
-    burner_x_values_cff_ht_real, norm.pdf(burner_x_values_cff_ht_real, cff_ht_real_mean, cff_ht_real_stddev), 
-    color = "red", linestyle = "--", label = fr"Gaussian Fit: $\mu = {cff_ht_real_mean:.3f}$, $\sigma = {cff_ht_real_stddev:.3f}$")
-ax4.axvline(real_ht_values[0], color = "green", linestyle = "-", linewidth = 2., label = f"KM15: {real_ht_values[0]:.3f}")
-
-ax4.set_ylabel("Frequency", rotation = 90., fontsize = 16.)
-ax4.set_xlabel(r"Real$[\tilde{\mathcal{H}}]$", fontsize = 16.)
-ax4.set_title(f"{this_kinematic_set_title_string}\n(KM15): {km15_cff_string}", fontsize = 16.)
-
-ax4.legend()
-
-cff_ht_real_plotname = f"./local/version_{MAJOR_MINOR_NUMBER}/plots/cff_ht_real_fits_v{MAJOR_MINOR_NUMBER}"
-
-for extension in ['png', 'eps']:
-    fig4.savefig(
-        f"{cff_ht_real_plotname}.{extension}",
-        facecolor = 'white')
+    cff_km15_value = km15_values[cff_label]
     
-plt.close(fig4)
-
-burner_x_values_cff_ht_imag = np.linspace(
-    cff_ht_imag_mean - 4.*cff_ht_imag_stddev,
-    cff_ht_imag_mean + 4.*cff_ht_imag_stddev,
-    200)
-
-fig4, ax4 = plt.subplots(1, 1, figsize = (10, 7))
-
-ax4.hist(cff_ht_imag_pred_per_replica, bins = 30, alpha = 0.6, color = 'skyblue', edgecolor = 'black')
-ax4.plot(
-    burner_x_values_cff_ht_imag, norm.pdf(burner_x_values_cff_ht_imag, cff_ht_imag_mean, cff_ht_imag_stddev), 
-    color = "red", linestyle = "--", label = fr"Gaussian Fit: $\mu = {cff_ht_imag_mean:.3f}$, $\sigma = {cff_ht_imag_stddev:.3f}$")
-ax4.axvline(imag_ht_values[0], color = "green", linestyle = "-", linewidth = 2., label = f"KM15: {imag_ht_values[0]:.3f}")
-
-ax4.set_ylabel("Frequency", rotation = 90., fontsize = 16.)
-ax4.set_xlabel(r"Im$[\tilde{\mathcal{H}}]$", fontsize = 16.)
-ax4.set_title(f"{this_kinematic_set_title_string}\n(KM15): {km15_cff_string}", fontsize = 16.)
-
-ax4.legend()
-
-cff_ht_imag_plotname = f"./local/version_{MAJOR_MINOR_NUMBER}/plots/cff_ht_imag_fits_v{MAJOR_MINOR_NUMBER}"
-
-for extension in ['png', 'eps']:
-    fig4.savefig(
-        f"{cff_ht_imag_plotname}.{extension}",
-        facecolor = 'white')
+    gaussian_x_values = np.linspace(
+        cff_mean - _NUMBER_OF_STDDEVS * cff_stddev,
+        cff_mean + _NUMBER_OF_STDDEVS * cff_stddev,
+        _NUMBER_OF_GAUSSIAN_POINTS
+    )
     
-plt.close(fig4)
+    kinematic_title = (
+        rf"$k = {FIXED_K:.3f}$ GeV, "
+        rf"$x_B = {FIXED_XB:.3f}$, "
+        rf"$t = {FIXED_T:.3f}$ GeV$^2$, "
+        rf"$Q^2 = {FIXED_Q_SQUARED:.3f}$ GeV$^2$"
+        )
+    
+    cff_figure, cff_axis = plt.subplots(1, 1, figsize = (10, 8))
+    
+    cff_axis.hist(
+        cff_prediction_per_replica,
+        bins = _NUMBER_OF_HISTOGRAM_BINS,
+        alpha = 0.6,
+        color = "skyblue",
+        edgecolor = "black")
+    
+    cff_axis.plot(
+        gaussian_x_values,
+        norm.pdf(
+            gaussian_x_values,
+            cff_mean,
+            cff_stddev
+        ),
+        color = "red",
+        linestyle = "--",
+        label = (
+            fr"Gaussian Fit: $\mu = {cff_mean:.3f}$, $\sigma = {cff_stddev:.3f}$"
+        )
+    )
+    
+    cff_axis.axvline(
+        cff_km15_value,
+        color = "green",
+        linestyle = "-",
+        linewidth = 2.0,
+        label = f"KM15: {cff_km15_value:.3f}")
+    
+    cff_axis.set_ylabel(
+        "Frequency",
+        rotation = 90.,
+        fontsize = 16.0)
+    
+    cff_axis.set_xlabel(
+        make_cff_plot_label(cff_label),
+        fontsize = 16.0)
+    
+    cff_axis.set_title(
+        rf"{make_cff_plot_label(cff_label)} Distribution, "
+        rf"{kinematic_title}"
+        "\n"
+        rf"(KM15): {km15_cff_string}",
+        fontsize = 16.0)
+    
+    cff_axis.legend(fontsize = 16.0)
+    
+    cff_axis.text(
+        0.00, -0.05,
+        f"Figure rendered {datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        transform = cff_axis.transAxes)
+    
+    cff_figure.tight_layout()
+    
+    for extension in ["png", "eps"]:
+        cff_figure.savefig(
+            plots_directory /
+            f"cff_{cff_label}_fits_v{MAJOR_MINOR_NUMBER}.{extension}",
+            facecolor = "white",
+            transparent = False
+        )
+    
+    plt.close(cff_figure)
