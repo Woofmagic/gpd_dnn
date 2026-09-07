@@ -1,53 +1,51 @@
 """
-An alternative simultaneous fit loss that is suspected to be
-more optimized than the current one.
-Created: 20260817
-Last changed: 20260822
-Notes:
-    1.  2026/08/22:
-        This only contains the unpolarized coefficients.
-    2.  2026/08/23:
-        All of the functions are here.
-    3.  2026/08/31:
-        Cross-checked with true values of all the coefficients, and
-        all the numbers are the same down to 1e-8. Nice! See the 
-        associated plot.
+Created: 20260901
+Last changed: 20260901
+
+A TensorFlow custom loss function that dynamically adapts to the number
+of free CFFs and the number of observables.
+
+Notes: None yet.
 """
 
 import numpy as np
 import tensorflow as tf
 
+@tf.keras.utils.register_keras_serializable(package = "simultaneous_fit_loss")
 class UnfoldedSimultaneousFitLoss(tf.keras.losses.Loss):
-    def __init__(self, name = "simultaneous_loss"):
-        super().__init__(name = name)
+    def __init__(
+            self,
+            enabled_observables,
+            observable_weights = None
+        ): 
+        super().__init__(name = "simultaneous_loss")
 
         # debugging parameter:
-        self.debugging = True
+        self.debugging = False
 
+        # the set of observables we want to fit:
+        self.enabled_observables = enabled_observables
+
+        # the set of *weights* per observable:
+        self.observable_weights = tf.constant(
+            observable_weights,
+            dtype = tf.float32,
+        )
+
+        # WW relations:
         self.use_ww = True
 
+        # numerical constants:
         self.gev6_to_gev4_per_nb = tf.constant(.389379 * 1000000.)
         self.mp = tf.constant(0.93827208816)
         self.qed_alpha = tf.constant(1./137.035999177)
         self.fe_constant = tf.constant(0.710649)
         self.mu_proton = tf.constant(2.79284734463)
 
-        self._OBSERVABLE_WEIGHT_1 = 0.5 * 1.0
-        self._OBSERVABLE_WEIGHT_2 = 0.5 * 1.0
-        self._OBSERVABLE_WEIGHT_3 = 0.0 * 0.5
-        self._OBSERVABLE_WEIGHT_4 = 0.0 * 0.5
-
     def debug_print(self, label, value):
         # need this for huge comparisons...
         if self.debugging:
-            tf.print(
-                label,
-                tf.strings.as_string(
-                    value,
-                    precision = 17,
-                    scientific = False,
-                ),
-            )
+            tf.print(label, value)
 
     def compute_cross_section(
         self,
@@ -1505,10 +1503,6 @@ class UnfoldedSimultaneousFitLoss(tf.keras.losses.Loss):
         self.debug_print("[DEBUG]: effective Im[Et]: ", cff_et_imag_eff_tf)
 
         # observables:
-        true_cross_section = true_values[:, 0]
-        true_bsa = true_values[:, 1]
-
-        # observables:
         sigma_plus = self.compute_cross_section(
             q_sq_tf, xb_tf, t_tf, ep_tf, y_lep_tf, xi_tf, k_tf, f1_tf, f2_tf, ktilde_tf, tprime_tf, phi_tf, p1_tf, p2_tf,
             cff_h_real_tf, cff_ht_real_tf, cff_e_real_tf, cff_et_real_tf,
@@ -1545,17 +1539,28 @@ class UnfoldedSimultaneousFitLoss(tf.keras.losses.Loss):
             self.debug_cross_section = predicted_unp_beam_unp_cross_section
             self.debug_bsa = predicted_unp_target_bsa
 
-        # compute cross-section residuals:
-        residuals_cross_section = (true_cross_section - predicted_unp_beam_unp_cross_section)
+        predicted_observables = {
+            "unp_beam_unp_target_xsec":
+                predicted_unp_beam_unp_cross_section,
+            "plus_beam_unp_target_xsec":
+                predicted_plus_beam_unp_cross_section,
+            "minus_beam_unp_target_xsec":
+                predicted_minus_beam_unp_cross_section,
+            "unp_target_bsa":
+                predicted_unp_target_bsa,
+        }
+        
+        predicted = tf.stack(
+            [predicted_observables[name] for name in self.enabled_observables],
+            axis = 1,
+        )
 
-        # compute BSA residuals:
-        residuals_bsa = (true_bsa - predicted_unp_target_bsa)
+        # compute residuals:
+        residuals = true_values - predicted
 
         # compute the MSE:
-        mean_squared_error = (
-            self._OBSERVABLE_WEIGHT_1 * tf.reduce_mean(tf.square(residuals_cross_section))+
-            self._OBSERVABLE_WEIGHT_2 * tf.reduce_mean(tf.square(residuals_bsa))
-            )
+        mean_squared_error = tf.reduce_mean(
+            self.observable_weights * tf.square(residuals)
+        )
 
         return mean_squared_error
-    
