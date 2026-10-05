@@ -1,5 +1,7 @@
+scratch_path: './local/'
+
 versioning:
-  major: 1
+  major: 21
   minor: 1
 
 cff_config:
@@ -12,28 +14,48 @@ cff_config:
   enable_cff_real_et: False
   enable_cff_imag_et: False
 
+cff_quenching:
+  quench_cff_real_h: False
+  quench_cff_imag_h: False
+  quench_cff_real_e: True
+  quench_cff_imag_e: True
+  quench_cff_real_ht: False
+  quench_cff_imag_ht: False
+  quench_cff_real_et: True
+  quench_cff_imag_et: True
+
 data_config:
   start_value_of_phi_in_degrees: 0
   end_value_of_phi_in_degrees: 360
-  number_of_phi_points: 360
+  number_of_phi_points: 100
 
 dnn_config:
   epochs: 1500
-  replicas: 10
+  replicas: 3
   batch_size: 30
   adam_learning_rate: 0.001
 
 observable_config:
+  equally_weighted_observables: True
+  
   enable_unp_beam_unp_target_xsec: True
   enable_plus_beam_unp_target_xsec: False
   enable_minus_beam_unp_target_xsec: False
-  enable_unp_beam_lp_target_xsec: False
-  enable_plus_beam_lp_target_xsec: False
-  enable_minus_beam_lp_target_xsec: False
+  
+  enable_unp_beam_plus_target_xsec: False
+  enable_plus_beam_plus_target_xsec: False
+  enable_minus_beam_plus_target_xsec: False
+
+  enable_unp_beam_minus_target_xsec: False
+  enable_plus_beam_minus_target_xsec: False
+  enable_minus_beam_minus_target_xsec: False
+
   enable_unp_target_bsa: True
   enable_plus_target_bsa: False
   enable_minus_target_bsa: False
+
   enable_unp_beam_tsa: False
   enable_plus_beam_tsa: False
   enable_minus_beam_tsa: False
+  
   enable_dsa: False
