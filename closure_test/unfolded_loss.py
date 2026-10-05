@@ -1502,63 +1502,163 @@ class UnfoldedSimultaneousFitLoss(tf.keras.losses.Loss):
         self.debug_print("[DEBUG]: effective Re[Et]: ", cff_et_real_eff_tf)
         self.debug_print("[DEBUG]: effective Im[Et]: ", cff_et_imag_eff_tf)
 
-        # observables:
-        sigma_plus = self.compute_cross_section(
+        # computing the four fundamental cross-section variations:
+
+        # (1): sigma(+1, +1/2)
+        sigma_plus_plus = self.compute_cross_section(
             q_sq_tf, xb_tf, t_tf, ep_tf, y_lep_tf, xi_tf, k_tf, f1_tf, f2_tf, ktilde_tf, tprime_tf, phi_tf, p1_tf, p2_tf,
             cff_h_real_tf, cff_ht_real_tf, cff_e_real_tf, cff_et_real_tf,
             cff_h_imag_tf, cff_ht_imag_tf, cff_e_imag_tf, cff_et_imag_tf,
             cff_h_real_eff_tf, cff_ht_real_eff_tf, cff_e_real_eff_tf, cff_et_real_eff_tf,
             cff_h_imag_eff_tf, cff_ht_imag_eff_tf, cff_e_imag_eff_tf, cff_et_imag_eff_tf,
             lep_lambda = tf.ones_like(lep_lambda),
-            tgt_lambda = tgt_lambda
+            tgt_lambda = tf.ones_like(tgt_lambda)
         )
-        sigma_minus = self.compute_cross_section(
+
+        # (2): sigma(+1, -1/2)
+        sigma_plus_minus = self.compute_cross_section(
+            q_sq_tf, xb_tf, t_tf, ep_tf, y_lep_tf, xi_tf, k_tf, f1_tf, f2_tf, ktilde_tf, tprime_tf, phi_tf, p1_tf, p2_tf,
+            cff_h_real_tf, cff_ht_real_tf, cff_e_real_tf, cff_et_real_tf,
+            cff_h_imag_tf, cff_ht_imag_tf, cff_e_imag_tf, cff_et_imag_tf,
+            cff_h_real_eff_tf, cff_ht_real_eff_tf, cff_e_real_eff_tf, cff_et_real_eff_tf,
+            cff_h_imag_eff_tf, cff_ht_imag_eff_tf, cff_e_imag_eff_tf, cff_et_imag_eff_tf,
+            lep_lambda = tf.ones_like(lep_lambda),
+            tgt_lambda = -tf.ones_like(tgt_lambda)
+        )
+
+        # (3): sigma(-1, +1/2)
+        sigma_minus_plus = self.compute_cross_section(
             q_sq_tf, xb_tf, t_tf, ep_tf, y_lep_tf, xi_tf, k_tf, f1_tf, f2_tf, ktilde_tf, tprime_tf, phi_tf, p1_tf, p2_tf,
             cff_h_real_tf, cff_ht_real_tf, cff_e_real_tf, cff_et_real_tf,
             cff_h_imag_tf, cff_ht_imag_tf, cff_e_imag_tf, cff_et_imag_tf,
             cff_h_real_eff_tf, cff_ht_real_eff_tf, cff_e_real_eff_tf, cff_et_real_eff_tf,
             cff_h_imag_eff_tf, cff_ht_imag_eff_tf, cff_e_imag_eff_tf, cff_et_imag_eff_tf,
             lep_lambda = -tf.ones_like(lep_lambda),
-            tgt_lambda = tgt_lambda,
+            tgt_lambda = tf.ones_like(tgt_lambda)
         )
 
-        sigma_even = 0.5 * (sigma_plus + sigma_minus)
-        sigma_odd = 0.5 * (sigma_plus - sigma_minus)
+        # (4): sigma(+1, -1/2)
+        sigma_minus_minus = self.compute_cross_section(
+            q_sq_tf, xb_tf, t_tf, ep_tf, y_lep_tf, xi_tf, k_tf, f1_tf, f2_tf, ktilde_tf, tprime_tf, phi_tf, p1_tf, p2_tf,
+            cff_h_real_tf, cff_ht_real_tf, cff_e_real_tf, cff_et_real_tf,
+            cff_h_imag_tf, cff_ht_imag_tf, cff_e_imag_tf, cff_et_imag_tf,
+            cff_h_real_eff_tf, cff_ht_real_eff_tf, cff_e_real_eff_tf, cff_et_real_eff_tf,
+            cff_h_imag_eff_tf, cff_ht_imag_eff_tf, cff_e_imag_eff_tf, cff_et_imag_eff_tf,
+            lep_lambda = -tf.ones_like(lep_lambda),
+            tgt_lambda = -tf.ones_like(tgt_lambda)
+        )
 
-        # loss-computed observables:
-        predicted_unp_beam_unp_cross_section = sigma_even + lep_lambda * sigma_odd
-        predicted_plus_beam_unp_cross_section = sigma_plus
-        predicted_minus_beam_unp_cross_section = sigma_minus
-        predicted_unp_target_bsa = sigma_odd / sigma_even
+        # cross-section | sigma(0, 0):
+        sigma_unp_beam_unp_target = (0.25 * (
+            sigma_plus_plus + sigma_plus_minus + sigma_minus_plus + sigma_minus_minus
+        ))
+        # cross-section | sigma(+1/2, 0):
+        sigma_plus_unp_target = 0.5 * (sigma_plus_plus + sigma_plus_minus)
+        # cross-section | sigma(-1/2, 0):
+        sigma_minus_unp_target = 0.5 * (sigma_minus_plus + sigma_minus_minus)
+
+        # cross-section | sigma(0, +1/2):
+        sigma_unp_beam_plus_target = 0.5 * (sigma_plus_plus + sigma_minus_plus)
+        # cross-section | sigma(0, -1/2):
+        sigma_unp_beam_minus_target = 0.5 * ( sigma_plus_minus + sigma_minus_minus)
+
+        sigma_unp_beam_lp_target = 0.5 * (sigma_plus_plus + sigma_minus_plus)
+        sigma_plus_lp_target = sigma_plus_plus
+        sigma_minus_lp_target = sigma_minus_plus
+
+        # sum of all sigma contributions:
+        total_sigma = (
+            sigma_plus_plus + sigma_plus_minus + sigma_minus_plus + sigma_minus_minus
+        )
+
+        # BSA(0)
+        bsa_unp_target = (
+            sigma_plus_plus + sigma_plus_minus - sigma_minus_plus - sigma_minus_minus
+        ) / total_sigma
+
+        # BSA(+1/2)
+        bsa_plus_target = (sigma_plus_plus - sigma_minus_plus) / (sigma_plus_plus + sigma_minus_plus)
+
+        # BSA(-1/2)
+        bsa_minus_target = (sigma_plus_minus - sigma_minus_minus) / (sigma_plus_minus + sigma_minus_minus)
+
+        # TSA(0)
+        tsa_unp_beam = (
+            (sigma_plus_plus + sigma_minus_plus - sigma_plus_minus - sigma_minus_minus) / 
+            total_sigma)
+
+        # TSA(+1)
+        tsa_plus_beam = (
+            (sigma_plus_plus - sigma_plus_minus) /
+            (sigma_plus_plus + sigma_plus_minus)
+            )
+
+        # TSA(-1):
+        tsa_minus_beam = (
+            (sigma_minus_plus - sigma_minus_minus) /
+            (sigma_minus_plus + sigma_minus_minus)
+            )
+
+        # DSA
+        dsa = (
+            sigma_plus_plus - sigma_plus_minus- sigma_minus_plus + sigma_minus_minus
+        ) / total_sigma
 
         if self.debugging:
-            self.debug_sigma_plus = sigma_plus
-            self.debug_sigma_minus = sigma_minus
-            self.debug_sigma_even = sigma_even
-            self.debug_sigma_odd = sigma_odd
-            self.debug_cross_section = predicted_unp_beam_unp_cross_section
-            self.debug_bsa = predicted_unp_target_bsa
+            self.debug_sigma_plus_plus = sigma_plus_plus
+            self.debug_sigma_plus_minus = sigma_plus_minus
+            self.debug_sigma_minus_plus = sigma_minus_plus
+            self.debug_sigma_minus_minus = sigma_minus_minus
+
+            self.debug_sigma_plus_unp_target = sigma_plus_unp_target
+            self.debug_sigma_minus_unp_target = sigma_minus_unp_target
+            self.debug_sigma_unp_beam_plus_target = sigma_unp_beam_plus_target
+            self.debug_sigma_unp_beam_minus_target = sigma_unp_beam_minus_target
+            self.debug_sigma_unp_beam_unp_target = sigma_unp_beam_unp_target
+
+            self.debug_sigma_unp_beam_lp_target = sigma_unp_beam_lp_target
+            self.debug_sigma_plus_lp_target = sigma_plus_lp_target
+            self.debug_sigma_minus_lp_target = sigma_minus_lp_target
+
+            self.debug_bsa_unp_target = bsa_unp_target
+            self.debug_bsa_plus_target = bsa_plus_target
+            self.debug_bsa_minus_target = bsa_minus_target
+
+            self.debug_tsa_unp_beam = tsa_unp_beam
+            self.debug_tsa_plus_beam = tsa_plus_beam
+            self.debug_tsa_minus_beam = tsa_minus_beam
+
+            self.debug_dsa = dsa
 
         predicted_observables = {
-            "unp_beam_unp_target_xsec":
-                predicted_unp_beam_unp_cross_section,
-            "plus_beam_unp_target_xsec":
-                predicted_plus_beam_unp_cross_section,
-            "minus_beam_unp_target_xsec":
-                predicted_minus_beam_unp_cross_section,
-            "unp_target_bsa":
-                predicted_unp_target_bsa,
+            "unp_beam_unp_target_xsec": sigma_unp_beam_unp_target,
+            "plus_beam_unp_target_xsec": sigma_plus_unp_target,
+            "minus_beam_unp_target_xsec": sigma_minus_unp_target,
+
+            "unp_beam_lp_target_xsec": sigma_unp_beam_lp_target,
+            "plus_beam_lp_target_xsec": sigma_plus_lp_target,
+            "minus_beam_lp_target_xsec": sigma_minus_lp_target,
+
+            "unp_target_bsa": bsa_unp_target,
+            "plus_target_bsa": bsa_plus_target,
+            "minus_target_bsa": bsa_minus_target,
+
+            "unp_beam_tsa": tsa_unp_beam,
+            "plus_beam_tsa": tsa_plus_beam,
+            "minus_beam_tsa": tsa_minus_beam,
+
+            "dsa": dsa,
         }
-        
+
         predicted = tf.stack(
             [predicted_observables[name] for name in self.enabled_observables],
             axis = 1,
         )
 
-        # compute residuals:
+        # Compute residuals:
         residuals = true_values - predicted
 
-        # compute the MSE:
+        # Compute the MSE:
         mean_squared_error = tf.reduce_mean(
             self.observable_weights * tf.square(residuals)
         )
